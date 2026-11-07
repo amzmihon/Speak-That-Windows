@@ -95,7 +95,7 @@ class MainWindow(ctk.CTk):
         pills_frame = ctk.CTkFrame(hk_left, fg_color="transparent")
         pills_frame.pack(anchor="w", pady=(4, 6))
 
-        for k in ["Ctrl", "Alt", "S"]:
+        for k in ["Ctrl", "Shift", "R"]:
             pill = ctk.CTkLabel(
                 pills_frame,
                 text=k,
@@ -132,7 +132,7 @@ class MainWindow(ctk.CTk):
 
         self.stop_btn = ctk.CTkButton(
             hk_right,
-            text="⏹ Stop Speech (Ctrl+Alt+X)",
+            text="⏹ Stop Speech (Ctrl+Shift+X)",
             font=("Segoe UI", 11),
             fg_color="#dc2626",
             hover_color="#b91c1c",
@@ -184,7 +184,7 @@ class MainWindow(ctk.CTk):
 
         self.live_sentence_label = ctk.CTkLabel(
             st_inner,
-            text="Press Ctrl+Alt+S on highlighted text to begin listening.",
+            text="Press Ctrl+Shift+R on highlighted text to begin listening.",
             font=("Segoe UI", 11, "italic"),
             text_color="#cbd5e1",
             anchor="w"
@@ -297,7 +297,7 @@ class MainWindow(ctk.CTk):
             fg_color="#0f172a"
         )
         self.text_box.pack(fill="x", pady=(0, 8))
-        self.text_box.insert("1.0", "Paradee is a small voice that runs anywhere. Select any text on Windows and press Ctrl+Alt+S to hear it.")
+        self.text_box.insert("1.0", "Paradee is a small voice that runs anywhere. Select any text on Windows and press Ctrl+Shift+R to hear it.")
 
         tb_actions = ctk.CTkFrame(rc_inner, fg_color="transparent")
         tb_actions.pack(fill="x")

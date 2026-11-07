@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>SpeakThat — Voice Pulse Spectrum</title>
+  <g fill="#000000">
+    <!-- Bar 1 (Left Caret Anchor) -->
+    <rect x="40" y="98" width="24" height="60" rx="12" />
+    <!-- Bar 2 (Rising Voice) -->
+    <rect x="79" y="66" width="24" height="124" rx="12" />
+    <!-- Bar 3 (Peak Amplitude - Text Focus) -->
+    <rect x="118" y="38" width="24" height="180" rx="12" />
+    <!-- Bar 4 (Resonance) -->
+    <rect x="157" y="66" width="24" height="124" rx="12" />
+    <!-- Bar 5 (Tail Accent) -->
+    <rect x="196" y="98" width="24" height="60" rx="12" />
+  </g>
+</svg>

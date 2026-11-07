@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"><title>SpeakThat Brand Logo</title><rect width="256" height="256" rx="57.6" fill="#1E1B4B"/><g transform="translate(7.04 17.15) scale(0.866)" fill="#FFFFFF">
+  
+  <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Selection Cursor Caret: exact 45° (dx=60, dy=60) -->
+    <path d="M 48 68 L 108 128 L 48 188" stroke-width="26" />
+    <!-- Inner Sound Arc (r=42) -->
+    <path d="M 134 94 A 42 42 0 0 1 134 162" stroke-width="22" />
+    <!-- Middle Sound Arc (r=74) -->
+    <path d="M 162 68 A 74 74 0 0 1 162 188" stroke-width="22" />
+    <!-- Outer Sound Arc (r=106) -->
+    <path d="M 190 44 A 106 106 0 0 1 190 212" stroke-width="22" />
+  </g>
+</g></svg>

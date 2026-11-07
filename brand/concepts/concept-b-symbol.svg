@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>SpeakThat — Acoustic S Ribbon</title>
+  <g fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Outer Speech/Sound Echo Arc -->
+    <path d="M 186 52 A 88 88 0 0 0 68 128 C 68 186 188 154 188 198 C 188 222 164 236 136 236 C 104 236 78 220 68 194" stroke-width="26" />
+    <path d="M 120 20 C 158 20 188 38 188 74 C 188 116 68 86 68 132 C 68 174 122 178 172 160" stroke-width="26" />
+    <circle cx="128" cy="128" r="14" fill="#000000" stroke="none" />
+  </g>
+</svg>

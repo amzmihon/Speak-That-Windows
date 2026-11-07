@@ -52,11 +52,11 @@ class HotkeyManager:
         self.on_read = on_read_callback
         self.on_stop = on_stop_callback
 
-        self.hotkey_read_str = "<ctrl>+<alt>+s"
-        self.hotkey_stop_str = "<ctrl>+<alt>+x"
+        self.hotkey_read_str = "<ctrl>+<shift>+r"
+        self.hotkey_stop_str = "<ctrl>+<shift>+x"
 
         self._hotkeys = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def set_hotkeys(self, read_str, stop_str):
         self.hotkey_read_str = normalize_hotkey(read_str)
@@ -64,7 +64,12 @@ class HotkeyManager:
 
     def start(self):
         with self._lock:
-            self.stop()
+            if self._hotkeys is not None:
+                try:
+                    self._hotkeys.stop()
+                except Exception:
+                    pass
+                self._hotkeys = None
             try:
                 mapping = {}
                 if self.on_read and self.hotkey_read_str:

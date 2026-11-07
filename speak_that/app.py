@@ -71,17 +71,22 @@ class SpeakThatApp:
         self.engine.on_complete = self._on_engine_complete
 
     def start(self):
-        # Start system tray
+        print("[+] Starting system tray icon...", flush=True)
         self.tray.start()
 
-        # Start global hotkeys
+        print("[+] Registering global hotkeys...", flush=True)
         self.hotkeys.start()
 
-        # If user configured start minimized, hide window
+        print("[+] Launching SpeakThat Dashboard...", flush=True)
+        print("    * Shortcut: [Ctrl + Shift + R] to read selected text", flush=True)
+        print("    * Shortcut: [Ctrl + Shift + X] to stop reading", flush=True)
+        print("===================================================\n", flush=True)
+
         if self.config.get("start_minimized", False):
             self.window.withdraw()
+        else:
+            self.show_window()
 
-        # Start Tkinter main loop
         try:
             self.window.mainloop()
         except KeyboardInterrupt:
@@ -90,16 +95,22 @@ class SpeakThatApp:
     def show_window(self):
         """Restore and focus the main settings dashboard window."""
         def _show():
-            self.window.deiconify()
-            self.window.lift()
-            self.window.focus_force()
+            try:
+                self.window.deiconify()
+                self.window.lift()
+                self.window.attributes("-topmost", True)
+                self.window.after(250, lambda: self.window.attributes("-topmost", False))
+                self.window.focus_force()
+            except Exception:
+                pass
         self.window.after(0, _show)
 
     def read_selected_text(self):
         """Action invoked when shortcut Ctrl+Alt+S is pressed."""
         fallback = self.config.get("fallback_to_clipboard", True)
-        restore = self.config.get("restore_clipboard", True)
+        restore = self.config.get("restore_clipboard", False)
 
+        print("[Hotkeys] Triggered: Capturing selected text...", flush=True)
         self.window.update_status("Capturing text...")
 
         text = get_selected_text(
@@ -108,6 +119,11 @@ class SpeakThatApp:
         )
 
         if text and text.strip():
+            preview = text.strip().replace("\n", " ")
+            if len(preview) > 50:
+                preview = preview[:47] + "..."
+            print(f"[Reader] Speaking ({len(text)} chars): \"{preview}\"", flush=True)
+
             # Show HUD if enabled
             if self.config.get("show_floating_hud", True):
                 first_line = text.strip().split("\n")[0]
@@ -116,10 +132,10 @@ class SpeakThatApp:
             # Start reading
             self.engine.speak(text)
         else:
+            print("[Reader] No text selected or on clipboard.", flush=True)
             self.window.update_status("Ready")
-            # Briefly flash message on HUD
             def _flash_no_text():
-                self.hud.show("No text selected. Highlight text and press Ctrl+Alt+S.")
+                self.hud.show("No text selected. Highlight text and press Ctrl+Shift+R.")
                 self.window.after(2500, self.hud.hide)
             self.window.after(0, _flash_no_text)
 

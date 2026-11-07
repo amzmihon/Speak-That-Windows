@@ -2,15 +2,15 @@
 
 **SpeakThat** is a modern, ultra-fast Windows Text Reader desktop application powered by **Paradee 8M ONNX TTS** (distilled from Kokoro-82M). 
 
-Whenever you highlight any text across any Windows application (browser, PDF reader, Word document, IDE, chat app) and press **`Ctrl + Alt + S`**, SpeakThat will instantly capture the selected text and read it aloud with natural, high-fidelity human speech.
+Whenever you highlight any text across any Windows application (browser, PDF reader, Word document, IDE, chat app) and press **`Ctrl + Shift + R`**, SpeakThat will instantly capture the selected text and read it aloud with natural, high-fidelity human speech.
 
 ---
 
 ## ✨ Features
 
 - **Global Hotkey Reader**:
-  - **`Ctrl + Alt + S`**: Reads currently selected text in any Windows software.
-  - **`Ctrl + Alt + X`**: Instantly stops / cancels speech playback.
+  - **`Ctrl + Shift + R`**: Reads currently selected text in any Windows software.
+  - **`Ctrl + Shift + X`**: Instantly stops / cancels speech playback.
 - **Paradee 8M TTS Engine**:
   - Tiny ~8.5 MB int8 quantized ONNX model.
   - Over **18x to 25x real-time speed** on standard CPU.
@@ -57,9 +57,9 @@ run_background.vbs
 
 ### 2. How to Use
 1. Highlight any text in your browser, document, or application.
-2. Press **`Ctrl + Alt + S`**.
+2. Press **`Ctrl + Shift + R`**.
 3. SpeakThat will start reading the text aloud immediately.
-4. Press **`Ctrl + Alt + X`** (or the Stop button on the floating HUD) at any time to cancel.
+4. Press **`Ctrl + Shift + X`** (or the Stop button on the floating HUD) at any time to cancel.
 
 ---
 
@@ -97,8 +97,8 @@ Settings are automatically saved and reloaded:
     "voice": "bf_isabella",
     "speed": 1.05,
     "volume": 1.0,
-    "hotkey_read": "<ctrl>+<alt>+s",
-    "hotkey_stop": "<ctrl>+<alt>+x",
+    "hotkey_read": "<ctrl>+<shift>+r",
+    "hotkey_stop": "<ctrl>+<shift>+x",
     "restore_clipboard": true,
     "fallback_to_clipboard": true,
     "show_floating_hud": true,

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 256" width="880" height="256">
+  <title>SpeakThat Lockup C</title>
+  <g transform="translate(16, 0)">
+    <g fill="#000000">
+    <!-- Bar 1 (Left Caret Anchor) -->
+    <rect x="40" y="98" width="24" height="60" rx="12" />
+    <!-- Bar 2 (Rising Voice) -->
+    <rect x="79" y="66" width="24" height="124" rx="12" />
+    <!-- Bar 3 (Peak Amplitude - Text Focus) -->
+    <rect x="118" y="38" width="24" height="180" rx="12" />
+    <!-- Bar 4 (Resonance) -->
+    <rect x="157" y="66" width="24" height="124" rx="12" />
+    <!-- Bar 5 (Tail Accent) -->
+    <rect x="196" y="98" width="24" height="60" rx="12" />
+  </g>
+  </g>
+  <g transform="translate(24, 0)">
+    
+  <!-- S -->
+  <path d="M 284 106 C 280 94 268 88 252 88 C 234 88 222 98 222 112 C 222 130 240 136 260 142 C 282 148 296 156 296 178 C 296 202 276 216 250 216 C 226 216 210 204 206 188" fill="none" stroke="currentColor" stroke-width="18" stroke-linecap="round" />
+  <!-- p -->
+  <path d="M 320 114 L 320 250" fill="none" stroke="currentColor" stroke-width="18" stroke-linecap="round" />
+  <circle cx="348" cy="148" r="32" fill="none" stroke="currentColor" stroke-width="18" />
+  <!-- e -->
+  <path d="M 396 154 L 448 154 C 448 132 436 114 418 114 C 398 114 388 132 388 154 C 388 178 400 196 422 196 C 438 196 446 188 450 180" fill="none" stroke="currentColor" stroke-width="18" stroke-linecap="round" />
+  <!-- a -->
+  <circle cx="488" cy="154" r="28" fill="none" stroke="currentColor" stroke-width="18" />
+  <path d="M 516 126 L 516 196" fill="none" stroke="currentColor" stroke-width="18" stroke-linecap="round" />
+  <!-- k -->
+  <path d="M 548 76 L 548 196" fill="none" stroke="currentColor" stroke-width="18" stroke-linecap="round" />
+  <path d="M 584 126 L 552 156 L 586 196" fill="none" stroke="currentColor" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- T -->
+  <path d="M 618 84 L 668 84" fill="none" stroke="#6366F1" stroke-width="18" stroke-linecap="round" />
+  <path d="M 643 84 L 643 196" fill="none" stroke="#6366F1" stroke-width="18" stroke-linecap="round" />
+  <!-- h -->
+  <path d="M 686 76 L 686 196" fill="none" stroke="#6366F1" stroke-width="18" stroke-linecap="round" />
+  <path d="M 686 142 C 696 126 712 118 726 118 C 742 118 750 128 750 148 L 750 196" fill="none" stroke="#6366F1" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- a -->
+  <circle cx="788" cy="154" r="26" fill="none" stroke="#6366F1" stroke-width="18" />
+  <path d="M 814 128 L 814 196" fill="none" stroke="#6366F1" stroke-width="18" stroke-linecap="round" />
+  <!-- t -->
+  <path d="M 844 98 L 844 196 C 844 204 848 208 856 208" fill="none" stroke="#6366F1" stroke-width="18" stroke-linecap="round" />
+  <path d="M 834 124 L 858 124" fill="none" stroke="#6366F1" stroke-width="18" stroke-linecap="round" />
+
+  </g>
+</svg>

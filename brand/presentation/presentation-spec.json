@@ -1,0 +1,60 @@
+{
+  "brand": "SpeakThat",
+  "tagline": "Instant Windows Text Reader",
+  "brief": "A lightweight Windows desktop reader that instantly reads selected text aloud with natural human speech when pressing Ctrl+Shift+R.",
+  "adjectives": [
+    "instant",
+    "acoustic",
+    "unobtrusive",
+    "crisp",
+    "modern"
+  ],
+  "criteria": "Recognizable at 16 px in Windows system tray, distinct from generic speech bubbles, evokes text selection and voice synthesis, works in monochrome and brand indigo.",
+  "industry": "software",
+  "nav": [
+    "Features",
+    "Voices",
+    "Shortcuts",
+    "GitHub"
+  ],
+  "brand_color": "#6366F1",
+  "greyscale": false,
+  "designer": "Antigravity Creative Studio",
+  "round": 1,
+  "concepts": [
+    {
+      "name": "The Soundwave Cursor",
+      "symbol": "../concepts/concept-a-symbol.svg",
+      "lockup": "../concepts/concept-a-lockup.svg",
+      "idea": "A text selection caret that radiates progressive acoustic voice waves.",
+      "rationale": [
+        "Unifies the two core user actions: selecting text (caret) and listening (soundwaves)",
+        "Stands out from generic chat speech bubbles",
+        "Retains crisp silhouette at 16 px and 32 px taskbar scales"
+      ]
+    },
+    {
+      "name": "The Acoustic S Ribbon",
+      "symbol": "../concepts/concept-b-symbol.svg",
+      "lockup": "../concepts/concept-b-lockup.svg",
+      "idea": "A fluid geometric S monogram doubling as continuous sound frequency tracks.",
+      "rationale": [
+        "Direct initial letter monogram (S for SpeakThat)",
+        "Fluid motion conveys real-time speech generation",
+        "Clean single-color mark reproducible in monochrome"
+      ]
+    },
+    {
+      "name": "The Voice Pulse Spectrum",
+      "symbol": "../concepts/concept-c-symbol.svg",
+      "lockup": "../concepts/concept-c-lockup.svg",
+      "idea": "Five reader voice frequency bars centered on acoustic peak.",
+      "rationale": [
+        "Pure geometric simplicity with 100/100 production readiness score",
+        "Instantly communicates audio playback and speech modulation",
+        "Extremely sharp on Windows notification area"
+      ]
+    }
+  ],
+  "recommendation": "The Soundwave Cursor — it uniquely tells the 'select text and speak' story without falling into standard chat bubble tropes, and scales down with zero ambiguity to a 16 px tray icon."
+}
