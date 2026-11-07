@@ -1,5 +1,6 @@
 """Paradee Text-To-Speech Engine with Sentence Streaming and Async Audio Playback."""
 
+import os
 import queue
 import re
 import threading
@@ -52,14 +53,23 @@ class TTSEngine:
         try:
             self._notify_status("Loading Paradee TTS model...")
 
-            # Attempt instant offline load from HuggingFace cache first
+            # 1. Prefer local bundled model in package directory
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            local_model = os.path.join(base_dir, "model", "paradee_int8.onnx")
+            local_config = os.path.join(base_dir, "model", "config.json")
+
             model_path, config_path = None, None
-            try:
-                from huggingface_hub import hf_hub_download
-                model_path = hf_hub_download("sahilmahendrakar/Paradee-8M-v1.2", "onnx/paradee_int8.onnx", revision="v1.2", local_files_only=True)
-                config_path = hf_hub_download("sahilmahendrakar/Paradee-8M-v1.2", "config.json", revision="v1.2", local_files_only=True)
-            except Exception:
-                model_path, config_path = None, None
+            if os.path.exists(local_model) and os.path.exists(local_config):
+                model_path, config_path = local_model, local_config
+
+            # 2. Attempt offline load from HuggingFace cache if local bundle not present
+            if not model_path or not config_path:
+                try:
+                    from huggingface_hub import hf_hub_download
+                    model_path = hf_hub_download("sahilmahendrakar/Paradee-8M-v1.2", "onnx/paradee_int8.onnx", revision="v1.2", local_files_only=True)
+                    config_path = hf_hub_download("sahilmahendrakar/Paradee-8M-v1.2", "config.json", revision="v1.2", local_files_only=True)
+                except Exception:
+                    model_path, config_path = None, None
 
             if model_path and config_path:
                 self.model = Paradee(version="1.2", quantized=True, model_path=model_path, config_path=config_path)

@@ -4,4 +4,5 @@ __pycache__/
 *.wav
 config.json
 paradee-repo/
-
+build/
+dist/

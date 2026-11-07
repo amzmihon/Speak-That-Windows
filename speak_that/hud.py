@@ -1,20 +1,42 @@
-"""Warm Champagne Glassmorphism Floating Mini-Player Pop-up for SpeakThat.
+"""WinUI 3 Fluent Glassmorphism Floating Capsule HUD for SpeakThat.
 
-Styled 1:1 after the modern TTS AI Floating Widget specification:
-- Deep warm stone base (#1C1917) with ultra-soft glassmorphism.
-- Warm champagne (#FAEDCD) and wheat accents with glowing top highlight edge.
-- AI Neural Pulse / Waveform Icon Badge with 3 animated resonant wave bars.
-- Amber pulsating status indicator and clean sentence snippet.
-- Minimalist rounded-xl interactive controls (Champagne Pause/Resume and Rose Stop).
+Key Improvements:
+- 100% transparent window canvas (-transparentcolor) completely eliminates rectangular box artifacts.
+- Fully rounded 26px pebble capsule with zero sharp or pointy edges.
+- Semi-transparent frosted glass aesthetic with -alpha 0.90.
+- Official Microsoft Fluent Icons (Segoe Fluent Icons / Segoe MDL2 Assets) for Pause, Play, and Stop.
+- AI Neural Pulse icon badge with 3 smooth, rounded sinusoidal wave bars.
+- Amber status indicator dot and warm champagne/wheat typography.
+- Smooth Windows 11 DWM rounded corner clipping.
 """
 
+import ctypes
 import math
 import tkinter as tk
 import customtkinter as ctk
 
+# Color key used by Windows DWM compositor to make rectangular window boundaries 100% invisible
+TRANS_KEY_COLOR = "#000001"
+
+
+def get_fluent_font():
+    """Detect the best installed Fluent / Segoe icon font on this Windows system."""
+    try:
+        import tkinter.font as tkfont
+        families = tkfont.families()
+        for f in ["Segoe Fluent Icons", "Segoe MDL2 Assets", "Segoe UI Symbol"]:
+            if f in families:
+                return f
+    except Exception:
+        pass
+    return "Segoe UI"
+
+
+FLUENT_FONT = get_fluent_font()
+
 
 class FloatingHUD:
-    """A soft, borderless, draggable floating pill widget with warm champagne glassmorphism."""
+    """A soft, borderless, draggable floating pill widget with WinUI 3 Acrylic styling."""
 
     def __init__(self, master, on_pause_toggle=None, on_stop=None):
         self.master = master
@@ -25,11 +47,21 @@ class FloatingHUD:
         self.window.withdraw()
         self.window.overrideredirect(True)
         self.window.attributes("-topmost", True)
-        self.window.attributes("-alpha", 0.96)
+
+        # Semi-transparency & Transparent Color Keying (completely removes outer square corners)
+        try:
+            self.window.configure(fg_color=TRANS_KEY_COLOR)
+            self.window.wm_attributes("-transparentcolor", TRANS_KEY_COLOR)
+            self.window.attributes("-alpha", 0.90)
+        except Exception:
+            pass
+
+        # Apply Windows 11 DWM native hardware round corner clipping
+        self._apply_dwm_rounding()
 
         # Dimensions & default placement
-        self.width = 430
-        self.height = 70
+        self.width = 440
+        self.height = 74
         self._set_default_position()
 
         # Dragging state
@@ -44,6 +76,20 @@ class FloatingHUD:
 
         self._build_ui()
 
+    def _apply_dwm_rounding(self):
+        try:
+            self.window.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(self.window.winfo_id())
+            if not hwnd:
+                hwnd = self.window.winfo_id()
+            dwm = ctypes.windll.dwmapi
+            # DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2
+            dwm.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(ctypes.c_int(2)), 4)
+            # DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            dwm.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(ctypes.c_int(1)), 4)
+        except Exception:
+            pass
+
     def _set_default_position(self):
         screen_w = self.master.winfo_screenwidth()
         screen_h = self.master.winfo_screenheight()
@@ -52,37 +98,28 @@ class FloatingHUD:
         self.window.geometry(f"{self.width}x{self.height}+{x}+{y}")
 
     def _build_ui(self):
-        self.window.configure(fg_color="#141211")
+        # Outer padding frame colored with TRANS_KEY_COLOR so all pixels outside capsule are invisible
+        outer_container = tk.Frame(self.window, bg=TRANS_KEY_COLOR)
+        outer_container.pack(fill="both", expand=True, padx=4, pady=4)
+        outer_container.bind("<Button-1>", self._start_drag)
+        outer_container.bind("<B1-Motion>", self._on_drag)
 
-        # Main Capsule Frame (Deep warm stone with subtle champagne border)
+        # Main Capsule Frame: Fully rounded pebble (corner_radius=26)
         self.capsule = ctk.CTkFrame(
-            self.window,
-            corner_radius=18,
-            fg_color="#1C1917",
+            outer_container,
+            corner_radius=26,
+            fg_color="#1A1816",
             border_width=1,
-            border_color="#4A3F35"
+            border_color="#4F4336"
         )
-        self.capsule.pack(fill="both", expand=True, padx=2, pady=2)
+        self.capsule.pack(fill="both", expand=True)
 
-        # Bind dragging on the capsule
         self.capsule.bind("<Button-1>", self._start_drag)
         self.capsule.bind("<B1-Motion>", self._on_drag)
 
-        # --- Ambient Glowing Top Edge Highlight (Warm Champagne) ---
-        self.top_glow = tk.Canvas(
-            self.capsule,
-            height=2,
-            bg="#1C1917",
-            highlightthickness=0
-        )
-        self.top_glow.pack(fill="x", side="top", padx=16, pady=(1, 0))
-        self.top_glow.bind("<Button-1>", self._start_drag)
-        self.top_glow.bind("<B1-Motion>", self._on_drag)
-        self.top_glow.bind("<Configure>", self._draw_top_glow)
-
-        # --- Content Row ---
+        # Main Content Row
         content_row = ctk.CTkFrame(self.capsule, fg_color="transparent")
-        content_row.pack(fill="both", expand=True, padx=12, pady=(4, 8))
+        content_row.pack(fill="both", expand=True, padx=14, pady=10)
         content_row.bind("<Button-1>", self._start_drag)
         content_row.bind("<B1-Motion>", self._on_drag)
 
@@ -91,12 +128,12 @@ class FloatingHUD:
             content_row,
             width=42,
             height=42,
-            corner_radius=12,
-            fg_color="#2A241E",
+            corner_radius=14,
+            fg_color="#2A231C",
             border_width=1,
-            border_color="#5E4F3D"
+            border_color="#544636"
         )
-        self.badge.pack(side="left", padx=(2, 10))
+        self.badge.pack(side="left", padx=(0, 10))
         self.badge.pack_propagate(False)
         self.badge.bind("<Button-1>", self._start_drag)
         self.badge.bind("<B1-Motion>", self._on_drag)
@@ -105,8 +142,8 @@ class FloatingHUD:
         self.wave_canvas = tk.Canvas(
             self.badge,
             width=32,
-            height=24,
-            bg="#2A241E",
+            height=26,
+            bg="#2A231C",
             highlightthickness=0
         )
         self.wave_canvas.pack(expand=True)
@@ -114,9 +151,9 @@ class FloatingHUD:
         self.wave_canvas.bind("<B1-Motion>", self._on_drag)
 
         self.wave_bars = [
-            self.wave_canvas.create_line(7, 10, 7, 14, width=2.5, capstyle=tk.ROUND, fill="#FAEDCD"),
-            self.wave_canvas.create_line(15, 8, 15, 16, width=2.5, capstyle=tk.ROUND, fill="#FDE68A"),
-            self.wave_canvas.create_line(23, 10, 23, 14, width=2.5, capstyle=tk.ROUND, fill="#FAEDCD"),
+            self.wave_canvas.create_line(7, 11, 7, 15, width=3, capstyle=tk.ROUND, fill="#FAEDCD"),
+            self.wave_canvas.create_line(15, 9, 15, 17, width=3, capstyle=tk.ROUND, fill="#FDE68A"),
+            self.wave_canvas.create_line(23, 11, 23, 15, width=3, capstyle=tk.ROUND, fill="#FAEDCD"),
         ]
 
         # 2. Content Area: Status & Snippet
@@ -135,7 +172,7 @@ class FloatingHUD:
             status_row,
             width=10,
             height=10,
-            bg="#1C1917",
+            bg="#1A1816",
             highlightthickness=0
         )
         self.dot_canvas.pack(side="left", padx=(0, 5))
@@ -166,23 +203,23 @@ class FloatingHUD:
         self.sentence_label.bind("<Button-1>", self._start_drag)
         self.sentence_label.bind("<B1-Motion>", self._on_drag)
 
-        # 3. Minimalist Interactive Control Buttons
+        # 3. Minimalist Interactive Control Buttons (WinUI 3 Segoe Fluent Icons)
         self.btn_frame = ctk.CTkFrame(content_row, fg_color="transparent")
-        self.btn_frame.pack(side="right", padx=(6, 2))
+        self.btn_frame.pack(side="right", padx=(6, 0))
 
         # Pause / Resume Button (Warm Champagne)
         self.pause_btn = ctk.CTkButton(
             self.btn_frame,
-            text="⏸",
+            text="\uE769",  # Fluent Pause Icon
             width=32,
             height=32,
-            corner_radius=10,
-            fg_color="#2A241E",
-            hover_color="#3D3328",
+            corner_radius=12,
+            fg_color="#2A231C",
+            hover_color="#3D342B",
             border_width=1,
-            border_color="#5E4F3D",
+            border_color="#544636",
             text_color="#FAEDCD",
-            font=("Segoe UI", 10, "bold"),
+            font=(FLUENT_FONT, 11),
             command=self._handle_pause_click
         )
         self.pause_btn.pack(side="left", padx=3)
@@ -190,34 +227,19 @@ class FloatingHUD:
         # Stop Button (Rose 500 Tint)
         self.stop_btn = ctk.CTkButton(
             self.btn_frame,
-            text="■",
+            text="\uE71A",  # Fluent Stop Icon
             width=32,
             height=32,
-            corner_radius=10,
+            corner_radius=12,
             fg_color="#3C1820",
-            hover_color="#54202B",
+            hover_color="#52212D",
             border_width=1,
             border_color="#7F2736",
             text_color="#FECDD3",
-            font=("Segoe UI", 10, "bold"),
+            font=(FLUENT_FONT, 11),
             command=self._handle_stop_click
         )
         self.stop_btn.pack(side="left", padx=3)
-
-    def _draw_top_glow(self, event=None):
-        if not getattr(self, "_is_alive", True):
-            return
-        try:
-            w = self.top_glow.winfo_width()
-            if w <= 1:
-                return
-            self.top_glow.delete("all")
-            # Smooth warm champagne highlight centered along top edge
-            left = int(w * 0.15)
-            right = int(w * 0.85)
-            self.top_glow.create_line(left, 1, right, 1, width=2, capstyle=tk.ROUND, fill="#FAEDCD")
-        except Exception:
-            pass
 
     def _start_drag(self, event):
         self._offset_x = event.x_root - self.window.winfo_x()
@@ -231,7 +253,7 @@ class FloatingHUD:
     def show(self, sentence="Reading selected text..."):
         self._is_paused = False
         self.update_sentence(sentence)
-        self.pause_btn.configure(text="⏸")
+        self.pause_btn.configure(text="\uE769")  # Pause icon
         self.status_label.configure(text="Reading selected text...", text_color="#FAEDCD")
         self.dot_canvas.itemconfig(self.dot_id, fill="#FCD34D")
         self.capsule.configure(border_color="#5E4F3D")
@@ -245,20 +267,20 @@ class FloatingHUD:
 
     def update_sentence(self, text):
         clean = text.strip().replace("\n", " ")
-        if len(clean) > 48:
-            clean = clean[:45] + "…"
+        if len(clean) > 46:
+            clean = clean[:43] + "…"
         self.sentence_label.configure(text=f'"{clean}"')
 
     def set_paused_state(self, is_paused):
         self._is_paused = is_paused
         if is_paused:
-            self.pause_btn.configure(text="▶")
+            self.pause_btn.configure(text="\uE768")  # Play icon
             self.status_label.configure(text="Paused (Click to resume)", text_color="#F59E0B")
             self.dot_canvas.itemconfig(self.dot_id, fill="#F59E0B")
             self.capsule.configure(border_color="#8C775D")
             self.stop_wave_animation()
         else:
-            self.pause_btn.configure(text="⏸")
+            self.pause_btn.configure(text="\uE769")  # Pause icon
             self.status_label.configure(text="Reading selected text...", text_color="#FAEDCD")
             self.dot_canvas.itemconfig(self.dot_id, fill="#FCD34D")
             self.capsule.configure(border_color="#5E4F3D")
@@ -271,12 +293,14 @@ class FloatingHUD:
 
     def stop_wave_animation(self):
         self._is_animating = False
-        # Set to resting heights
-        self.wave_canvas.coords(self.wave_bars[0], 7, 10, 7, 14)
-        self.wave_canvas.coords(self.wave_bars[1], 15, 9, 15, 15)
-        self.wave_canvas.coords(self.wave_bars[2], 23, 10, 23, 14)
-        for b in self.wave_bars:
-            self.wave_canvas.itemconfig(b, fill="#786B5E")
+        try:
+            self.wave_canvas.coords(self.wave_bars[0], 7, 11, 7, 15)
+            self.wave_canvas.coords(self.wave_bars[1], 15, 10, 15, 16)
+            self.wave_canvas.coords(self.wave_bars[2], 23, 11, 23, 15)
+            for b in self.wave_bars:
+                self.wave_canvas.itemconfig(b, fill="#786B5E")
+        except Exception:
+            pass
 
     def _animate_wave(self):
         if not getattr(self, "_is_alive", True) or not self._is_animating or self._is_paused:
@@ -287,13 +311,13 @@ class FloatingHUD:
 
             # 3 frequencies matching the HTML animation: 1.1s, 0.8s, 1.3s
             h1 = 4 + int(10 * abs(math.sin(self._anim_phase * 1.1)))
-            h2 = 4 + int(13 * abs(math.sin(self._anim_phase * 1.5 + 0.3)))
+            h2 = 4 + int(14 * abs(math.sin(self._anim_phase * 1.5 + 0.3)))
             h3 = 4 + int(10 * abs(math.sin(self._anim_phase * 0.9 + 0.7)))
 
-            # Update coords centered around y=12
-            self.wave_canvas.coords(self.wave_bars[0], 7, max(3, 12 - h1 // 2), 7, min(21, 12 + h1 // 2))
-            self.wave_canvas.coords(self.wave_bars[1], 15, max(2, 12 - h2 // 2), 15, min(22, 12 + h2 // 2))
-            self.wave_canvas.coords(self.wave_bars[2], 23, max(3, 13 - h3 // 2), 23, min(21, 13 + h3 // 2))
+            # Update coords centered around y=13
+            self.wave_canvas.coords(self.wave_bars[0], 7, max(3, 13 - h1 // 2), 7, min(23, 13 + h1 // 2))
+            self.wave_canvas.coords(self.wave_bars[1], 15, max(2, 13 - h2 // 2), 15, min(24, 13 + h2 // 2))
+            self.wave_canvas.coords(self.wave_bars[2], 23, max(3, 13 - h3 // 2), 23, min(23, 13 + h3 // 2))
 
             self.wave_canvas.itemconfig(self.wave_bars[0], fill="#FAEDCD")
             self.wave_canvas.itemconfig(self.wave_bars[1], fill="#FDE68A")

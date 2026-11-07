@@ -1,0 +1,205 @@
+"""Build script to create a standalone, redistributable Windows executable (.exe) and installer for SpeakThat.
+"""
+
+import os
+import sys
+import shutil
+import subprocess
+import zipfile
+
+def build():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(base_dir)
+
+    print("===================================================")
+    print("        SpeakThat Windows Release Builder          ")
+    print("===================================================\n")
+
+    # 1. Clean previous build artifacts
+    for folder in ["build", "dist"]:
+        if os.path.exists(folder):
+            print(f"[*] Cleaning old {folder} directory...")
+            try:
+                shutil.rmtree(folder)
+            except Exception as e:
+                print(f"[!] Warning cleaning {folder}: {e}")
+
+    # 2. Generate PyInstaller Spec
+    spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
+
+block_cipher = None
+
+# Collect all package assets
+ctk_datas = collect_data_files('customtkinter')
+misaki_datas = collect_data_files('misaki')
+spacy_datas = collect_data_files('spacy')
+en_datas = collect_data_files('en_core_web_sm')
+
+onnx_binaries = collect_dynamic_libs('onnxruntime')
+sd_binaries = collect_dynamic_libs('sounddevice')
+
+datas = [
+    ('assets', 'assets'),
+    ('speak_that/model', 'speak_that/model'),
+] + ctk_datas + misaki_datas + spacy_datas + en_datas
+
+binaries = onnx_binaries + sd_binaries
+
+hiddenimports = [
+    'customtkinter',
+    'paradee',
+    'misaki',
+    'spacy',
+    'en_core_web_sm',
+    'sounddevice',
+    '_sounddevice_data',
+    'pystray',
+    'pynput',
+    'pynput.keyboard._win32',
+    'pynput.mouse._win32',
+    'pyperclip',
+    'onnxruntime',
+    'PIL',
+    'PIL._imagingtk',
+    'PIL.ImageTk',
+]
+
+a = Analysis(
+    ['main.py'],
+    pathex=['.'],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    hooksconfig={{}},
+    runtime_hooks=[],
+    excludes=['matplotlib', 'scipy', 'torch', 'torchaudio', 'torchvision', 'pandas', 'IPython', 'jupyter'],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='SpeakThat',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon='assets/icon.ico',
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='SpeakThat',
+)
+'''
+
+    spec_path = os.path.join(base_dir, "SpeakThat.spec")
+    with open(spec_path, "w", encoding="utf-8") as f:
+        f.write(spec_content)
+    print(f"[*] Generated PyInstaller specification: {spec_path}")
+
+    # 3. Execute PyInstaller
+    print("[*] Running PyInstaller compiler (this may take 1-2 minutes)...")
+    pyinstaller_exe = os.path.join(base_dir, ".venv", "Scripts", "pyinstaller.exe")
+    if not os.path.exists(pyinstaller_exe):
+        pyinstaller_exe = "pyinstaller"
+
+    cmd = [pyinstaller_exe, "SpeakThat.spec", "--noconfirm", "--clean"]
+    res = subprocess.run(cmd)
+
+    if res.returncode != 0:
+        print(f"[!] PyInstaller build failed with exit code {res.returncode}")
+        sys.exit(res.returncode)
+
+    dist_dir = os.path.join(base_dir, "dist", "SpeakThat")
+    if not os.path.exists(dist_dir):
+        print(f"[!] Build output directory not found: {dist_dir}")
+        sys.exit(1)
+
+    print(f"[+] Application successfully compiled to: {dist_dir}")
+
+    # 4. Copy essential companion files into dist/SpeakThat
+    for fname in ["config.json", "README.md"]:
+        fpath = os.path.join(base_dir, fname)
+        if os.path.exists(fpath):
+            shutil.copy(fpath, os.path.join(dist_dir, fname))
+
+    # 5. Create one-click installer script: dist/SpeakThat/install.bat
+    install_bat_content = """@echo off
+title SpeakThat Windows Installer
+cd /d "%~dp0"
+echo ===================================================
+echo             SpeakThat Windows Setup                
+echo ===================================================
+echo.
+echo Installing SpeakThat to user Programs folder...
+
+set "TARGET_DIR=%LOCALAPPDATA%\\Programs\\SpeakThat"
+if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
+
+echo [*] Copying files to %TARGET_DIR%...
+xcopy /E /I /Y * "%TARGET_DIR%\\" > nul
+
+echo [*] Creating Desktop and Start Menu Shortcuts...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$ws = New-Object -ComObject WScript.Shell; ^
+   $s1 = $ws.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath('Desktop'), 'SpeakThat.lnk')); ^
+   $s1.TargetPath = '%TARGET_DIR%\\SpeakThat.exe'; ^
+   $s1.IconLocation = '%TARGET_DIR%\\assets\\icon.ico'; ^
+   $s1.Description = 'SpeakThat - Windows Text Reader'; ^
+   $s1.Save(); ^
+   $s2 = $ws.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath('StartMenu'), 'Programs', 'SpeakThat.lnk')); ^
+   $s2.TargetPath = '%TARGET_DIR%\\SpeakThat.exe'; ^
+   $s2.IconLocation = '%TARGET_DIR%\\assets\\icon.ico'; ^
+   $s2.Description = 'SpeakThat - Windows Text Reader'; ^
+   $s2.Save();"
+
+echo.
+echo [✓] Installation complete!
+echo     * Desktop Shortcut created: 'SpeakThat'
+echo     * Start Menu Shortcut created: 'SpeakThat'
+echo.
+echo Launching SpeakThat now...
+start "" "%TARGET_DIR%\\SpeakThat.exe"
+pause
+"""
+    with open(os.path.join(dist_dir, "Install.bat"), "w", encoding="utf-8") as f:
+        f.write(install_bat_content)
+
+    # 6. Create clean portable ZIP package: dist/SpeakThat-v1.2-Windows-x64.zip
+    zip_output = os.path.join(base_dir, "dist", "SpeakThat-v1.2-Windows-x64.zip")
+    print(f"[*] Packaging standalone ZIP release: {zip_output}...")
+    with zipfile.ZipFile(zip_output, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk(dist_dir):
+            for file in files:
+                abs_path = os.path.join(root, file)
+                rel_path = os.path.relpath(abs_path, os.path.dirname(dist_dir))
+                zipf.write(abs_path, rel_path)
+
+    zip_size_mb = os.path.getsize(zip_output) / 1024 / 1024
+    print(f"[✓] Release package created: {zip_output} ({zip_size_mb:.2f} MB)")
+    print("\n[✓] All build steps completed successfully!")
+
+if __name__ == "__main__":
+    build()

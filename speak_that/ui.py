@@ -12,6 +12,7 @@ import os
 import sys
 import math
 import time
+import ctypes
 import threading
 import tkinter as tk
 import customtkinter as ctk
@@ -94,6 +95,9 @@ class MainWindow(ctk.CTk):
         self.minsize(800, 580)
         self.maxsize(self.max_w, self.max_h)
 
+        # Apply Windows 11 DWM native hardware rounded corners, dark mode & acrylic
+        self._apply_dwm_attributes()
+
         # Animation state for live waveform
         self._is_speaking_anim = False
         self._wave_phase = 0.0
@@ -133,6 +137,24 @@ class MainWindow(ctk.CTk):
         self.max_w = min(1400, max(800, step_w))
         self.max_h = min(900, max(580, step_h))
         self.screen_res = (sw, sh)
+
+    def _apply_dwm_attributes(self):
+        """Applies Windows 11 DWM native hardware rounded corners, dark mode, and acrylic backdrop."""
+        try:
+            self.attributes("-alpha", 0.95)
+            self.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+            if not hwnd:
+                hwnd = self.winfo_id()
+            dwm = ctypes.windll.dwmapi
+            # DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            dwm.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(ctypes.c_int(1)), 4)
+            # DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2 (WinUI 3 standard)
+            dwm.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(ctypes.c_int(2)), 4)
+            # DWMWA_SYSTEMBACKDROP_TYPE = 38, Acrylic = 3
+            dwm.DwmSetWindowAttribute(hwnd, 38, ctypes.byref(ctypes.c_int(3)), 4)
+        except Exception:
+            pass
 
     def _set_window_icon(self):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
