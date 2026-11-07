@@ -20,6 +20,15 @@ Whenever you highlight any text across any Windows application (browser, PDF rea
     - **`af_heart`** — Heart (American Female, warm & expressive)
     - **`am_puck`** — Puck (American Male, casual & clear)
     - **`bm_fable`** — Fable (British Male, polished & narrative)
+- **Modern Navigation Rail & Studio UI**:
+  - Two-column Fluent architecture (Navigation Rail + Content Stage) crafted in Obsidian Dark (`#0B0F19`) and Electric Indigo (`#6366F1`).
+  - **Studio Reader**: Hero hotkey card, live animated waveform monitor, live spoken sentence tracking, and scratchpad with character/word/audio metrics.
+  - **Voice Personas**: 4 rich persona cards with flags, accent tags, descriptions, instant "Audition" testing, and segmented speed presets (`0.8x` to `2.0x`).
+  - **Shortcuts & Behavior**: Custom switches for clipboard restoration, fallback, floating HUD, and tray behavior.
+  - **Model & Benchmark**: Architectural specs of Paradee 8M and an interactive 1-sentence live latency benchmark tool.
+- **Brand Identity & Iconography**:
+  - Full brand kit featuring Concept A ("The Soundwave Cursor" — 45° selection caret with concentric acoustic arcs).
+  - Complete asset ladder (16px to 1024px PNGs, multi-resolution `.ico`, lockups, and presentation slides).
 - **Zero-Latency Sentence Streaming**:
   - Splits text into natural sentence chunks and begins audio playback on the very first sentence within **~100ms**, synthesizing subsequent sentences in parallel.
 - **Floating Mini-Player HUD**:

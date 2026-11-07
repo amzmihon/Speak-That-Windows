@@ -61,8 +61,8 @@ class SpeakThatApp:
             on_stop_callback=self.stop_reading
         )
         self.hotkeys.set_hotkeys(
-            self.config.get("hotkey_read", "<ctrl>+<alt>+s"),
-            self.config.get("hotkey_stop", "<ctrl>+<alt>+x")
+            self.config.get("hotkey_read", "<ctrl>+<shift>+r"),
+            self.config.get("hotkey_stop", "<ctrl>+<shift>+x")
         )
 
         # Connect engine callbacks
@@ -106,7 +106,7 @@ class SpeakThatApp:
         self.window.after(0, _show)
 
     def read_selected_text(self):
-        """Action invoked when shortcut Ctrl+Alt+S is pressed."""
+        """Action invoked when shortcut Ctrl+Shift+R is pressed."""
         fallback = self.config.get("fallback_to_clipboard", True)
         restore = self.config.get("restore_clipboard", False)
 
@@ -140,7 +140,7 @@ class SpeakThatApp:
             self.window.after(0, _flash_no_text)
 
     def stop_reading(self):
-        """Action invoked when shortcut Ctrl+Alt+X or Stop button is pressed."""
+        """Action invoked when shortcut Ctrl+Shift+X or Stop button is pressed."""
         self.engine.stop()
         self.window.after(0, self.hud.hide)
         self.window.update_status("Ready")
