@@ -1,11 +1,11 @@
 """Modern CustomTkinter Dashboard & Studio for SpeakThat.
 
-Designed following UI/UX Design Pro principles:
-- Obsidian base (#0B0F19), Rail (#0F172A), Elevated Cards (#131C2E).
-- Electric Indigo (#6366F1) primary accent with soft violet (#818CF8) highlights.
-- Navigation Rail + Stage architecture with Studio, Voices, Behavior, and Model views.
-- Dynamic audio waveform visualizer and live sentence tracking.
-- Interactive latency and synthesis benchmarking tool.
+Key UI/UX Enhancements:
+- Softened, less-edged design with rounded corners (16-18px), gentle contrast, and warm accents.
+- Dynamic window sizing with step configuration (width in steps of 200, height in steps of 100, up to 1400x900 max based on screen space).
+- Zero scrollbars at default size (all views budget vertical space to fit cleanly within available stage).
+- Navigation Rail + Stage architecture across Studio Reader, Voice Personas, Shortcuts & Behavior, and Model Benchmark.
+- High-performance animated waveform monitor and live sentence marquee.
 """
 
 import os
@@ -25,32 +25,32 @@ VOICE_DETAILS = {
         "name": "Isabella",
         "flag": "🇬🇧",
         "locale": "British Female",
-        "tag": "Narrative • High Fidelity",
-        "desc": "Crisp, refined British tone with natural cadence. Best for articles, documentation, and long-form reading.",
+        "tag": "Narrative",
+        "desc": "Crisp British cadence for docs & articles.",
         "sample": "Hello! I am Isabella. Paradee is a small voice that runs anywhere."
     },
     "af_heart": {
         "name": "Heart",
         "flag": "🇺🇸",
         "locale": "American Female",
-        "tag": "Warm • Conversational",
-        "desc": "Lively, expressive American female voice with natural inflections. Great for casual reading and dialogues.",
-        "sample": "Hi there! I'm Heart. Ready to read anything you highlight on your screen."
+        "tag": "Warm",
+        "desc": "Expressive American female voice for dialogues.",
+        "sample": "Hi there! I'm Heart. Ready to read anything on your screen."
     },
     "am_puck": {
         "name": "Puck",
         "flag": "🇺🇸",
         "locale": "American Male",
-        "tag": "Crisp • Direct",
-        "desc": "Dynamic, punchy American male voice with sharp enunciation. Ideal for code reviews, news, and technical summaries.",
+        "tag": "Crisp",
+        "desc": "Sharp enunciation for code & quick summaries.",
         "sample": "Greetings! I'm Puck. Fast, local text-to-speech right on your machine."
     },
     "bm_fable": {
         "name": "Fable",
         "flag": "🇬🇧",
         "locale": "British Male",
-        "tag": "Resonant • Theatrical",
-        "desc": "Deep, articulate British male persona with theatrical gravity. Excellent for storytelling and essays.",
+        "tag": "Resonant",
+        "desc": "Deep, articulate tone for storytelling & essays.",
         "sample": "Greetings. I am Fable. Bring your text to life with resonant British narration."
     }
 }
@@ -73,13 +73,32 @@ class MainWindow(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         self.title("SpeakThat — Windows Text Reader (Paradee TTS)")
-        self.geometry("940x690")
-        self.minsize(860, 600)
-        self.configure(fg_color="#0B0F19")
+        self.configure(fg_color="#0D111A")
 
         # Icons & assets
         self._logo_image = None
         self._set_window_icon()
+        self._is_alive = True
+
+        # Screen dimensions & Maximum Step Sizing Calculation
+        self._calc_screen_bounds()
+
+        # Load saved or default window size
+        saved_w = int(self.config.get("window_width", 1000))
+        saved_h = int(self.config.get("window_height", 620))
+        init_w = min(self.max_w, max(800, saved_w))
+        init_h = min(self.max_h, max(580, saved_h))
+        self.geometry(f"{init_w}x{init_h}")
+
+        # Configure minimum and maximum window boundaries
+        self.minsize(800, 580)
+        self.maxsize(self.max_w, self.max_h)
+
+        # Enable native step resize snapping (width step 200, height step 100)
+        try:
+            self.wm_grid(800, 580, 200, 100)
+        except Exception:
+            pass
 
         # Animation state for live waveform
         self._is_speaking_anim = False
@@ -104,6 +123,23 @@ class MainWindow(ctk.CTk):
         # Start background waveform loop
         self._animate_stage_wave()
 
+    def _calc_screen_bounds(self):
+        """Calculate max window step bounds (width steps of 200, height steps of 100, max 1400x900)."""
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+
+        # Cap at 1400x900 default maximum, scaled down by step if screen is smaller
+        avail_w = max(800, sw - 40)
+        avail_h = max(580, sh - 60)
+
+        # Snap to steps of 200 and 100
+        step_w = (avail_w // 200) * 200
+        step_h = (avail_h // 100) * 100
+
+        self.max_w = min(1400, max(800, step_w))
+        self.max_h = min(900, max(580, step_h))
+        self.screen_res = (sw, sh)
+
     def _set_window_icon(self):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         ico_path = os.path.join(base_dir, "assets", "icon.ico")
@@ -117,14 +153,14 @@ class MainWindow(ctk.CTk):
         if os.path.exists(png_path):
             try:
                 pil_img = Image.open(png_path)
-                self._logo_image = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(32, 32))
+                self._logo_image = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(30, 30))
             except Exception:
                 self._logo_image = None
 
     def _build_layout(self):
-        # Configure root grid (Column 0: Rail 230px, Column 1: Stage expand)
+        # Configure root grid: Column 0 = Rail (210px), Column 1 = Stage (expand)
         self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(0, weight=0, minsize=230)
+        self.grid_columnconfigure(0, weight=0, minsize=210)
         self.grid_columnconfigure(1, weight=1)
 
         # 1. Left Navigation Rail
@@ -136,25 +172,25 @@ class MainWindow(ctk.CTk):
     def _build_navigation_rail(self):
         self.rail = ctk.CTkFrame(
             self,
-            fg_color="#0F172A",
+            fg_color="#121722",
             corner_radius=0,
             border_width=1,
-            border_color="#1E293B",
-            width=230
+            border_color="#1F283B",
+            width=210
         )
         self.rail.grid(row=0, column=0, sticky="nsew")
         self.rail.grid_propagate(False)
 
         # --- Brand Lockup Header ---
         brand_frame = ctk.CTkFrame(self.rail, fg_color="transparent")
-        brand_frame.pack(fill="x", padx=16, pady=(18, 14))
+        brand_frame.pack(fill="x", padx=14, pady=(16, 12))
 
         icon_row = ctk.CTkFrame(brand_frame, fg_color="transparent")
         icon_row.pack(fill="x")
 
         if self._logo_image:
             logo_lbl = ctk.CTkLabel(icon_row, image=self._logo_image, text="")
-            logo_lbl.pack(side="left", padx=(0, 10))
+            logo_lbl.pack(side="left", padx=(0, 8))
 
         title_box = ctk.CTkFrame(icon_row, fg_color="transparent")
         title_box.pack(side="left", fill="both")
@@ -162,14 +198,14 @@ class MainWindow(ctk.CTk):
         ctk.CTkLabel(
             title_box,
             text="SpeakThat",
-            font=("Segoe UI", 16, "bold"),
+            font=("Segoe UI", 15, "bold"),
             text_color="#F8FAFC"
         ).pack(anchor="w")
 
         badge = ctk.CTkLabel(
             title_box,
             text="v1.2 • Paradee 8M",
-            font=("Segoe UI", 9, "bold"),
+            font=("Segoe UI", 8, "bold"),
             text_color="#818CF8",
             fg_color="#1E1B4B",
             corner_radius=6,
@@ -179,7 +215,7 @@ class MainWindow(ctk.CTk):
         badge.pack(anchor="w", pady=(1, 0))
 
         # Divider
-        ctk.CTkFrame(self.rail, height=1, fg_color="#1E293B").pack(fill="x", padx=16, pady=(6, 16))
+        ctk.CTkFrame(self.rail, height=1, fg_color="#1F283B").pack(fill="x", padx=14, pady=(4, 12))
 
         # --- Navigation Items ---
         nav_items = [
@@ -193,25 +229,24 @@ class MainWindow(ctk.CTk):
             btn = ctk.CTkButton(
                 self.rail,
                 text=f"  {icon}  {label}",
-                font=("Segoe UI", 12),
+                font=("Segoe UI", 11),
                 anchor="w",
-                height=40,
-                corner_radius=8,
+                height=38,
+                corner_radius=12,
                 fg_color="transparent",
-                hover_color="#1E293B",
+                hover_color="#1A2234",
                 text_color="#94A3B8",
                 command=lambda tid=tab_id: self.show_view(tid)
             )
-            btn.pack(fill="x", padx=12, pady=3)
+            btn.pack(fill="x", padx=10, pady=2)
             self.nav_buttons[tab_id] = btn
 
         # --- Rail Bottom Status Capsule ---
         rail_bottom = ctk.CTkFrame(self.rail, fg_color="transparent")
-        rail_bottom.pack(side="bottom", fill="x", padx=14, pady=16)
+        rail_bottom.pack(side="bottom", fill="x", padx=12, pady=14)
 
-        ctk.CTkFrame(rail_bottom, height=1, fg_color="#1E293B").pack(fill="x", pady=(0, 12))
+        ctk.CTkFrame(rail_bottom, height=1, fg_color="#1F283B").pack(fill="x", pady=(0, 10))
 
-        # Mini engine status capsule
         self.rail_status_pill = ctk.CTkLabel(
             rail_bottom,
             text="● Paradee Ready",
@@ -220,85 +255,93 @@ class MainWindow(ctk.CTk):
             fg_color="#064E3B",
             corner_radius=12,
             padx=10,
-            pady=4
+            pady=3
         )
-        self.rail_status_pill.pack(fill="x", pady=(0, 6))
+        self.rail_status_pill.pack(fill="x", pady=(0, 4))
 
         ctk.CTkLabel(
             rail_bottom,
             text="Global text reader active.\nRuns silently in background.",
-            font=("Segoe UI", 9),
+            font=("Segoe UI", 8),
             text_color="#64748B",
             justify="left"
         ).pack(anchor="w")
 
     def _build_stage(self):
         # Stage Outer Container
-        self.stage = ctk.CTkFrame(self, fg_color="#0B0F19", corner_radius=0)
+        self.stage = ctk.CTkFrame(self, fg_color="#0D111A", corner_radius=0)
         self.stage.grid(row=0, column=1, sticky="nsew", padx=0, pady=0)
         self.stage.grid_rowconfigure(1, weight=1)
         self.stage.grid_columnconfigure(0, weight=1)
 
         # Stage Top Header Bar (Persistent)
-        self.header_bar = ctk.CTkFrame(self.stage, fg_color="#0D1322", height=60, corner_radius=0, border_width=1, border_color="#1E293B")
+        self.header_bar = ctk.CTkFrame(
+            self.stage,
+            fg_color="#111622",
+            height=52,
+            corner_radius=0,
+            border_width=1,
+            border_color="#1F283B"
+        )
         self.header_bar.grid(row=0, column=0, sticky="new")
         self.header_bar.grid_propagate(False)
 
         # Header Titles
         hb_left = ctk.CTkFrame(self.header_bar, fg_color="transparent")
-        hb_left.pack(side="left", padx=20, pady=10)
+        hb_left.pack(side="left", padx=18, pady=8)
 
         self.view_title_label = ctk.CTkLabel(
             hb_left,
             text="Studio Reader",
-            font=("Segoe UI", 15, "bold"),
+            font=("Segoe UI", 14, "bold"),
             text_color="#F8FAFC"
         )
         self.view_title_label.pack(anchor="w")
 
         self.view_sub_label = ctk.CTkLabel(
             hb_left,
-            text="Instant Windows text reader powered by Paradee 8M",
-            font=("Segoe UI", 10),
+            text="Select text across any Windows app and press Ctrl+Shift+R",
+            font=("Segoe UI", 9),
             text_color="#94A3B8"
         )
         self.view_sub_label.pack(anchor="w")
 
-        # Header Right Micro Controls (Quick Status & Pause/Resume)
+        # Header Right Controls (Status Badge & Pause/Resume)
         hb_right = ctk.CTkFrame(self.header_bar, fg_color="transparent")
-        hb_right.pack(side="right", padx=18, pady=12)
+        hb_right.pack(side="right", padx=16, pady=10)
 
         self.status_badge = ctk.CTkLabel(
             hb_right,
             text="● Ready",
-            font=("Segoe UI", 11, "bold"),
+            font=("Segoe UI", 10, "bold"),
             text_color="#10B981",
             fg_color="#064E3B",
-            corner_radius=8,
-            padx=12,
-            pady=3
+            corner_radius=10,
+            padx=10,
+            pady=2
         )
-        self.status_badge.pack(side="left", padx=(0, 10))
+        self.status_badge.pack(side="left", padx=(0, 8))
 
         self.pause_resume_btn = ctk.CTkButton(
             hb_right,
             text="⏸ Pause",
-            width=80,
-            height=28,
-            font=("Segoe UI", 11),
-            fg_color="#1E293B",
-            hover_color="#334155",
+            width=76,
+            height=26,
+            corner_radius=10,
+            font=("Segoe UI", 10),
+            fg_color="#1A2234",
+            hover_color="#2D3A54",
             command=self._on_click_pause_resume
         )
         self.pause_resume_btn.pack(side="left")
 
-        # Content container where active view sits
+        # Content container where active view sits (Regular Frame: NO SCROLLBAR AT DEFAULT SIZE)
         self.view_container = ctk.CTkFrame(self.stage, fg_color="transparent")
-        self.view_container.grid(row=1, column=0, sticky="nsew", padx=20, pady=16)
+        self.view_container.grid(row=1, column=0, sticky="nsew", padx=16, pady=12)
         self.view_container.grid_rowconfigure(0, weight=1)
         self.view_container.grid_columnconfigure(0, weight=1)
 
-        # Build all 4 views
+        # Build all 4 views (using non-scrollable CTkFrame containers sized cleanly)
         self.views["reader"] = self._create_reader_view()
         self.views["voices"] = self._create_voices_view()
         self.views["shortcuts"] = self._create_shortcuts_view()
@@ -314,7 +357,7 @@ class MainWindow(ctk.CTk):
         for tid, btn in self.nav_buttons.items():
             if tid == name:
                 btn.configure(
-                    fg_color="#1E293B",
+                    fg_color="#1A2234",
                     text_color="#F8FAFC",
                     border_width=1,
                     border_color="#6366F1"
@@ -337,7 +380,7 @@ class MainWindow(ctk.CTk):
         subtitles = {
             "reader": ("Studio Reader", "Select text across any Windows app and press Ctrl+Shift+R"),
             "voices": ("Voice Personas", "Select, preview, and adjust Paradee's 4 neural voice models"),
-            "shortcuts": ("Shortcuts & Behavior", "Configure global hotkeys, clipboard preservation, and floating HUD"),
+            "shortcuts": ("Shortcuts & Behavior", "Configure global hotkeys, window step sizing, and behavior"),
             "model": ("Model & Benchmark", "Paradee 8M architecture specifications and live latency benchmarking")
         }
         title, sub = subtitles.get(name, ("SpeakThat", ""))
@@ -345,17 +388,17 @@ class MainWindow(ctk.CTk):
         self.view_sub_label.configure(text=sub)
 
     # =========================================================================
-    # VIEW 1: STUDIO READER
+    # VIEW 1: STUDIO READER (Budget: ~390px, fits comfortably with 0 scrollbars)
     # =========================================================================
     def _create_reader_view(self):
-        frame = ctk.CTkScrollableFrame(self.view_container, fg_color="transparent")
+        container = ctk.CTkFrame(self.view_container, fg_color="transparent")
 
         # --- 1. Hero Global Hotkey Card ---
-        hero_card = ctk.CTkFrame(frame, corner_radius=12, fg_color="#131C2E", border_width=1, border_color="#1E293B")
-        hero_card.pack(fill="x", pady=(0, 14))
+        hero_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        hero_card.pack(fill="x", pady=(0, 10))
 
         hc_inner = ctk.CTkFrame(hero_card, fg_color="transparent")
-        hc_inner.pack(fill="x", padx=18, pady=16)
+        hc_inner.pack(fill="x", padx=16, pady=12)
 
         hc_left = ctk.CTkFrame(hc_inner, fg_color="transparent")
         hc_left.pack(side="left", fill="both", expand=True)
@@ -363,70 +406,70 @@ class MainWindow(ctk.CTk):
         ctk.CTkLabel(
             hc_left,
             text="GLOBAL SELECTION SHORTCUT",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 9, "bold"),
             text_color="#818CF8"
         ).pack(anchor="w")
 
-        # Key pills row
         pills_row = ctk.CTkFrame(hc_left, fg_color="transparent")
-        pills_row.pack(anchor="w", pady=(6, 8))
+        pills_row.pack(anchor="w", pady=(4, 4))
 
-        keys = ["Ctrl", "+", "Shift", "+", "R"]
-        for k in keys:
+        for k in ["Ctrl", "+", "Shift", "+", "R"]:
             if k == "+":
-                ctk.CTkLabel(pills_row, text="+", font=("Segoe UI", 13, "bold"), text_color="#64748B").pack(side="left", padx=4)
+                ctk.CTkLabel(pills_row, text="+", font=("Segoe UI", 12, "bold"), text_color="#64748B").pack(side="left", padx=3)
             else:
                 pill = ctk.CTkLabel(
                     pills_row,
                     text=k,
-                    font=("Segoe UI", 12, "bold"),
+                    font=("Segoe UI", 11, "bold"),
                     fg_color="#1E1B4B",
                     text_color="#C7D2FE",
-                    corner_radius=6,
-                    width=46,
-                    height=28
+                    corner_radius=8,
+                    width=42,
+                    height=24
                 )
                 pill.pack(side="left")
 
         ctk.CTkLabel(
             hc_left,
-            text="Highlight any text in Chrome, PDF, Word, Slack or Notepad, then press the shortcut.",
-            font=("Segoe UI", 11),
+            text="Highlight any text in Chrome, PDF, Word, Slack or Notepad, then press shortcut.",
+            font=("Segoe UI", 10),
             text_color="#94A3B8"
         ).pack(anchor="w")
 
         # Action Buttons
         hc_right = ctk.CTkFrame(hc_inner, fg_color="transparent")
-        hc_right.pack(side="right", padx=(10, 0))
+        hc_right.pack(side="right", padx=(8, 0))
 
         self.hero_read_btn = ctk.CTkButton(
             hc_right,
             text="▶ Read Selection Now",
-            font=("Segoe UI", 12, "bold"),
+            font=("Segoe UI", 11, "bold"),
             fg_color="#6366F1",
             hover_color="#4F46E5",
-            height=36,
+            corner_radius=12,
+            height=32,
             command=self._on_click_read_selection
         )
-        self.hero_read_btn.pack(pady=4)
+        self.hero_read_btn.pack(pady=3)
 
         self.hero_stop_btn = ctk.CTkButton(
             hc_right,
-            text="⏹ Stop Speech (Ctrl+Shift+X)",
-            font=("Segoe UI", 11),
+            text="⏹ Stop (Ctrl+Shift+X)",
+            font=("Segoe UI", 10),
             fg_color="#7F1D1D",
             hover_color="#991B1B",
-            height=30,
+            corner_radius=12,
+            height=26,
             command=self._on_click_stop
         )
-        self.hero_stop_btn.pack(pady=4)
+        self.hero_stop_btn.pack(pady=3)
 
         # --- 2. Live Acoustic Visualizer & Spoken Sentence Marquee ---
-        vis_card = ctk.CTkFrame(frame, corner_radius=12, fg_color="#131C2E", border_width=1, border_color="#1E293B")
-        vis_card.pack(fill="x", pady=(0, 14))
+        vis_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        vis_card.pack(fill="x", pady=(0, 10))
 
         vc_inner = ctk.CTkFrame(vis_card, fg_color="transparent")
-        vc_inner.pack(fill="x", padx=18, pady=14)
+        vc_inner.pack(fill="x", padx=16, pady=10)
 
         vc_top = ctk.CTkFrame(vc_inner, fg_color="transparent")
         vc_top.pack(fill="x")
@@ -434,75 +477,72 @@ class MainWindow(ctk.CTk):
         ctk.CTkLabel(
             vc_top,
             text="LIVE SPEECH MONITOR",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 9, "bold"),
             text_color="#818CF8"
         ).pack(side="left")
 
-        # Canvas Waveform Visualizer
         self._wave_canvas = tk.Canvas(
             vc_inner,
-            height=36,
-            bg="#131C2E",
+            height=28,
+            bg="#151C2C",
             highlightthickness=0
         )
-        self._wave_canvas.pack(fill="x", pady=(8, 4))
+        self._wave_canvas.pack(fill="x", pady=(4, 2))
 
-        # Create 13 vertical rounded bars
         self._wave_bars = []
         for i in range(13):
-            bar = self._wave_canvas.create_line(0, 0, 0, 0, width=5, capstyle=tk.ROUND, fill="#334155")
+            bar = self._wave_canvas.create_line(0, 0, 0, 0, width=4, capstyle=tk.ROUND, fill="#2D3A54")
             self._wave_bars.append(bar)
 
         self._wave_canvas.bind("<Configure>", self._layout_waveform_bars)
 
-        # Live spoken sentence quote display
         self.live_sentence_label = ctk.CTkLabel(
             vc_inner,
             text="“Select any text on Windows and press Ctrl+Shift+R to begin listening.”",
-            font=("Segoe UI", 12, "italic"),
+            font=("Segoe UI", 11, "italic"),
             text_color="#E2E8F0",
             anchor="w",
             wraplength=620,
             justify="left"
         )
-        self.live_sentence_label.pack(fill="x", pady=(4, 2))
+        self.live_sentence_label.pack(fill="x", pady=(2, 0))
 
         # --- 3. Direct Text Reader Box & Scratchpad ---
-        reader_card = ctk.CTkFrame(frame, corner_radius=12, fg_color="#131C2E", border_width=1, border_color="#1E293B")
-        reader_card.pack(fill="x", pady=(0, 14))
+        reader_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        reader_card.pack(fill="x", pady=(0, 0))
 
         rc_inner = ctk.CTkFrame(reader_card, fg_color="transparent")
-        rc_inner.pack(fill="x", padx=18, pady=16)
+        rc_inner.pack(fill="x", padx=16, pady=12)
 
         rc_header = ctk.CTkFrame(rc_inner, fg_color="transparent")
-        rc_header.pack(fill="x", pady=(0, 8))
+        rc_header.pack(fill="x", pady=(0, 6))
 
         ctk.CTkLabel(
             rc_header,
             text="DIRECT TEXT READER & SCRATCHPAD",
-            font=("Segoe UI", 11, "bold"),
+            font=("Segoe UI", 10, "bold"),
             text_color="#F8FAFC"
         ).pack(side="left")
 
         self.char_metrics_lbl = ctk.CTkLabel(
             rc_header,
             text="16 words • 105 chars • ~6s audio",
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 9),
             text_color="#64748B"
         )
         self.char_metrics_lbl.pack(side="right")
 
         self.text_box = ctk.CTkTextbox(
             rc_inner,
-            height=130,
+            height=100,
             font=("Segoe UI", 11),
-            corner_radius=8,
+            corner_radius=12,
             border_width=1,
-            border_color="#1E293B",
-            fg_color="#090D16",
+            border_color="#222D42",
+            fg_color="#0A0E17",
             wrap="word"
         )
-        self.text_box.pack(fill="x", pady=(0, 10))
+        self.text_box.pack(fill="x", pady=(0, 8))
         self.text_box.insert("1.0", "Paradee is a small voice that runs anywhere. Select any text on Windows and press Ctrl+Shift+R to hear it.")
         self.text_box.bind("<KeyRelease>", self._update_text_metrics)
 
@@ -513,34 +553,40 @@ class MainWindow(ctk.CTk):
         self.speak_box_btn = ctk.CTkButton(
             tb_actions,
             text="🗣️ Read This Text Now",
-            font=("Segoe UI", 12, "bold"),
+            font=("Segoe UI", 11, "bold"),
             fg_color="#6366F1",
             hover_color="#4F46E5",
+            corner_radius=12,
+            height=30,
             command=self._on_speak_box_text
         )
-        self.speak_box_btn.pack(side="left", padx=(0, 10))
+        self.speak_box_btn.pack(side="left", padx=(0, 8))
 
         self.paste_btn = ctk.CTkButton(
             tb_actions,
-            text="📋 Paste Clipboard",
-            width=120,
-            fg_color="#1E293B",
-            hover_color="#334155",
+            text="📋 Paste",
+            width=80,
+            height=30,
+            corner_radius=12,
+            fg_color="#1A2234",
+            hover_color="#2D3A54",
             command=self._on_paste_clipboard
         )
-        self.paste_btn.pack(side="left", padx=(0, 8))
+        self.paste_btn.pack(side="left", padx=(0, 6))
 
         self.clear_box_btn = ctk.CTkButton(
             tb_actions,
             text="🧹 Clear",
-            width=70,
-            fg_color="#1E293B",
-            hover_color="#334155",
+            width=65,
+            height=30,
+            corner_radius=12,
+            fg_color="#1A2234",
+            hover_color="#2D3A54",
             command=self._on_clear_textbox
         )
         self.clear_box_btn.pack(side="left")
 
-        return frame
+        return container
 
     def _layout_waveform_bars(self, event=None):
         if not self._wave_canvas:
@@ -552,38 +598,40 @@ class MainWindow(ctk.CTk):
         spacing = w / (n + 1)
         for i, bar in enumerate(self._wave_bars):
             x = int((i + 1) * spacing)
-            self._wave_canvas.coords(bar, x, 14, x, 22)
+            self._wave_canvas.coords(bar, x, 11, x, 17)
 
     def _animate_stage_wave(self):
+        if not getattr(self, "_is_alive", True):
+            return
         if self._wave_canvas and self._wave_bars:
             w = self._wave_canvas.winfo_width()
             n = len(self._wave_bars)
             spacing = w / (n + 1) if w > 50 else 30
 
-            self._wave_phase += 0.25
+            self._wave_phase += 0.22
             is_active = self._is_speaking_anim
 
             for i, bar in enumerate(self._wave_bars):
                 x = int((i + 1) * spacing)
                 if is_active:
-                    h = 6 + int(12 * (1 + math.sin(self._wave_phase + i * 0.7)))
-                    y1 = max(4, 18 - h // 2)
-                    y2 = min(32, 18 + h // 2)
+                    h = 5 + int(10 * (1 + math.sin(self._wave_phase + i * 0.7)))
+                    y1 = max(2, 14 - h // 2)
+                    y2 = min(26, 14 + h // 2)
                     color = "#818CF8" if (i % 2 == 0) else "#6366F1"
                 else:
-                    y1, y2 = 16, 20
-                    color = "#334155"
+                    y1, y2 = 12, 16
+                    color = "#222D42"
 
                 self._wave_canvas.coords(bar, x, y1, x, y2)
                 self._wave_canvas.itemconfig(bar, fill=color)
 
-        self.after(50, self._animate_stage_wave)
+        if getattr(self, "_is_alive", True):
+            self._wave_after_id = self.after(50, self._animate_stage_wave)
 
     def _update_text_metrics(self, event=None):
         raw = self.text_box.get("1.0", "end-1c").strip()
         words = len(raw.split()) if raw else 0
         chars = len(raw)
-        # Average reading speed ~150 words/min -> 2.5 words/sec
         est_sec = max(1, round(words / 2.5)) if words > 0 else 0
         self.char_metrics_lbl.configure(text=f"{words} words • {chars} chars • ~{est_sec}s audio")
 
@@ -602,84 +650,90 @@ class MainWindow(ctk.CTk):
         self._update_text_metrics()
 
     # =========================================================================
-    # VIEW 2: VOICE PERSONAS
+    # VIEW 2: VOICE PERSONAS (2x2 Grid, Budget: ~340px, fits with 0 scrollbars)
     # =========================================================================
     def _create_voices_view(self):
-        frame = ctk.CTkScrollableFrame(self.view_container, fg_color="transparent")
+        container = ctk.CTkFrame(self.view_container, fg_color="transparent")
 
-        # --- 1. Grid of 4 Persona Cards ---
+        # --- 1. 2x2 Grid of 4 Persona Cards ---
         ctk.CTkLabel(
-            frame,
+            container,
             text="SELECT VOICE PERSONA",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 9, "bold"),
             text_color="#818CF8"
-        ).pack(anchor="w", pady=(0, 8))
+        ).pack(anchor="w", pady=(0, 6))
+
+        grid_frame = ctk.CTkFrame(container, fg_color="transparent")
+        grid_frame.pack(fill="x", pady=(0, 8))
+        grid_frame.grid_columnconfigure(0, weight=1)
+        grid_frame.grid_columnconfigure(1, weight=1)
 
         self.persona_cards = {}
-        for vkey, info in VOICE_DETAILS.items():
+        positions = [
+            ("bf_isabella", 0, 0),
+            ("af_heart", 0, 1),
+            ("am_puck", 1, 0),
+            ("bm_fable", 1, 1)
+        ]
+
+        for vkey, row_idx, col_idx in positions:
+            info = VOICE_DETAILS[vkey]
             card = ctk.CTkFrame(
-                frame,
-                corner_radius=10,
-                fg_color="#131C2E",
+                grid_frame,
+                corner_radius=14,
+                fg_color="#151C2C",
                 border_width=1,
-                border_color="#1E293B"
+                border_color="#222D42"
             )
-            card.pack(fill="x", pady=4)
+            padx_val = (0, 4) if col_idx == 0 else (4, 0)
+            card.grid(row=row_idx, column=col_idx, sticky="nsew", padx=padx_val, pady=4)
 
             inner = ctk.CTkFrame(card, fg_color="transparent")
-            inner.pack(fill="x", padx=16, pady=12)
+            inner.pack(fill="both", expand=True, padx=12, pady=10)
 
-            # Left avatar & title
-            left = ctk.CTkFrame(inner, fg_color="transparent")
-            left.pack(side="left", fill="both", expand=True)
+            top_row = ctk.CTkFrame(inner, fg_color="transparent")
+            top_row.pack(fill="x")
 
-            top_row = ctk.CTkFrame(left, fg_color="transparent")
-            top_row.pack(anchor="w")
-
-            flag_lbl = ctk.CTkLabel(top_row, text=info["flag"], font=("Segoe UI Emoji", 16))
-            flag_lbl.pack(side="left", padx=(0, 6))
-
-            name_lbl = ctk.CTkLabel(top_row, text=info["name"], font=("Segoe UI", 13, "bold"), text_color="#F8FAFC")
-            name_lbl.pack(side="left", padx=(0, 8))
-
-            tag_lbl = ctk.CTkLabel(
+            ctk.CTkLabel(top_row, text=info["flag"], font=("Segoe UI Emoji", 14)).pack(side="left", padx=(0, 4))
+            ctk.CTkLabel(top_row, text=info["name"], font=("Segoe UI", 12, "bold"), text_color="#F8FAFC").pack(side="left", padx=(0, 6))
+            ctk.CTkLabel(
                 top_row,
                 text=info["tag"],
-                font=("Segoe UI", 9, "bold"),
+                font=("Segoe UI", 8, "bold"),
                 text_color="#818CF8",
                 fg_color="#1E1B4B",
                 corner_radius=4,
-                padx=6,
+                padx=5,
                 pady=1
-            )
-            tag_lbl.pack(side="left")
+            ).pack(side="left")
 
-            desc_lbl = ctk.CTkLabel(left, text=info["desc"], font=("Segoe UI", 10), text_color="#94A3B8", anchor="w")
-            desc_lbl.pack(anchor="w", pady=(4, 0))
+            ctk.CTkLabel(inner, text=info["desc"], font=("Segoe UI", 9), text_color="#94A3B8", anchor="w").pack(anchor="w", pady=(2, 6))
 
-            # Right actions (Audition + Select)
-            right = ctk.CTkFrame(inner, fg_color="transparent")
-            right.pack(side="right", padx=(8, 0))
+            # Action Row
+            act_row = ctk.CTkFrame(inner, fg_color="transparent")
+            act_row.pack(fill="x")
 
             audition_btn = ctk.CTkButton(
-                right,
+                act_row,
                 text="▶ Audition",
-                font=("Segoe UI", 10, "bold"),
-                width=86,
-                height=28,
-                fg_color="#1E293B",
-                hover_color="#334155",
+                font=("Segoe UI", 9, "bold"),
+                width=76,
+                height=24,
+                corner_radius=10,
+                fg_color="#1A2234",
+                hover_color="#2D3A54",
                 command=lambda vk=vkey, smp=info["sample"]: self._on_audition_voice(vk, smp)
             )
-            audition_btn.pack(side="left", padx=4)
+            audition_btn.pack(side="left", padx=(0, 4))
 
             select_btn = ctk.CTkButton(
-                right,
+                act_row,
                 text="Select",
-                font=("Segoe UI", 10, "bold"),
-                width=76,
-                height=28,
-                fg_color="#312E81",
+                font=("Segoe UI", 9, "bold"),
+                width=68,
+                height=24,
+                corner_radius=10,
+                fg_color="#1E1B4B",
                 hover_color="#4338CA",
                 command=lambda vk=vkey: self._on_select_persona(vk)
             )
@@ -691,22 +745,21 @@ class MainWindow(ctk.CTk):
             }
 
         # --- 2. Reading Speed Settings Card ---
-        speed_card = ctk.CTkFrame(frame, corner_radius=12, fg_color="#131C2E", border_width=1, border_color="#1E293B")
-        speed_card.pack(fill="x", pady=(14, 0))
+        speed_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        speed_card.pack(fill="x", pady=(0, 8))
 
         sc_inner = ctk.CTkFrame(speed_card, fg_color="transparent")
-        sc_inner.pack(fill="x", padx=18, pady=16)
+        sc_inner.pack(fill="x", padx=16, pady=10)
 
         ctk.CTkLabel(
             sc_inner,
             text="READING SPEED PRESETS & PRECISION TUNER",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 9, "bold"),
             text_color="#818CF8"
-        ).pack(anchor="w", pady=(0, 8))
+        ).pack(anchor="w", pady=(0, 6))
 
-        # Speed Segmented Presets
         presets_frame = ctk.CTkFrame(sc_inner, fg_color="transparent")
-        presets_frame.pack(fill="x", pady=(0, 10))
+        presets_frame.pack(fill="x", pady=(0, 6))
 
         speeds = [0.8, 1.0, 1.05, 1.25, 1.5, 2.0]
         self.speed_preset_btns = {}
@@ -715,17 +768,17 @@ class MainWindow(ctk.CTk):
             btn = ctk.CTkButton(
                 presets_frame,
                 text=lbl,
-                width=55,
-                height=28,
-                font=("Segoe UI", 10, "bold"),
-                fg_color="#1E293B",
-                hover_color="#334155",
+                width=50,
+                height=24,
+                corner_radius=10,
+                font=("Segoe UI", 9, "bold"),
+                fg_color="#1A2234",
+                hover_color="#2D3A54",
                 command=lambda s=sp: self._apply_speed(s)
             )
-            btn.pack(side="left", padx=(0, 6))
+            btn.pack(side="left", padx=(0, 5))
             self.speed_preset_btns[sp] = btn
 
-        # Slider row
         slider_row = ctk.CTkFrame(sc_inner, fg_color="transparent")
         slider_row.pack(fill="x")
 
@@ -737,30 +790,30 @@ class MainWindow(ctk.CTk):
             command=self._on_speed_slider_moved,
             progress_color="#6366F1"
         )
-        self.speed_slider.pack(side="left", fill="x", expand=True, padx=(0, 12))
+        self.speed_slider.pack(side="left", fill="x", expand=True, padx=(0, 10))
 
         self.speed_val_label = ctk.CTkLabel(
             slider_row,
             text="1.05x",
-            font=("Segoe UI", 12, "bold"),
+            font=("Segoe UI", 11, "bold"),
             text_color="#F8FAFC",
-            width=50
+            width=46
         )
         self.speed_val_label.pack(side="left")
 
         # --- 3. Audio Volume Control ---
-        vol_card = ctk.CTkFrame(frame, corner_radius=12, fg_color="#131C2E", border_width=1, border_color="#1E293B")
-        vol_card.pack(fill="x", pady=(14, 0))
+        vol_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        vol_card.pack(fill="x", pady=(0, 0))
 
         vc_inner = ctk.CTkFrame(vol_card, fg_color="transparent")
-        vc_inner.pack(fill="x", padx=18, pady=16)
+        vc_inner.pack(fill="x", padx=16, pady=10)
 
         ctk.CTkLabel(
             vc_inner,
             text="OUTPUT VOLUME",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 9, "bold"),
             text_color="#818CF8"
-        ).pack(anchor="w", pady=(0, 8))
+        ).pack(anchor="w", pady=(0, 4))
 
         vol_row = ctk.CTkFrame(vc_inner, fg_color="transparent")
         vol_row.pack(fill="x")
@@ -773,18 +826,18 @@ class MainWindow(ctk.CTk):
             command=self._on_volume_changed,
             progress_color="#6366F1"
         )
-        self.vol_slider.pack(side="left", fill="x", expand=True, padx=(0, 12))
+        self.vol_slider.pack(side="left", fill="x", expand=True, padx=(0, 10))
 
         self.vol_val_label = ctk.CTkLabel(
             vol_row,
             text="100%",
-            font=("Segoe UI", 12, "bold"),
+            font=("Segoe UI", 11, "bold"),
             text_color="#F8FAFC",
-            width=50
+            width=46
         )
         self.vol_val_label.pack(side="left")
 
-        return frame
+        return container
 
     def _on_select_persona(self, voice_key):
         self.config.set("voice", voice_key)
@@ -796,18 +849,16 @@ class MainWindow(ctk.CTk):
             card = items["card"]
             btn = items["select_btn"]
             if vkey == active_key:
-                card.configure(border_color="#6366F1", border_width=2, fg_color="#161F36")
+                card.configure(border_color="#6366F1", border_width=2, fg_color="#182033")
                 btn.configure(text="✓ Active", fg_color="#6366F1", hover_color="#4F46E5")
             else:
-                card.configure(border_color="#1E293B", border_width=1, fg_color="#131C2E")
-                btn.configure(text="Select", fg_color="#1E293B", hover_color="#334155")
+                card.configure(border_color="#222D42", border_width=1, fg_color="#151C2C")
+                btn.configure(text="Select", fg_color="#1A2234", hover_color="#2D3A54")
 
     def _on_audition_voice(self, voice_key, sample_phrase):
-        # Speak audition directly using requested voice
         orig_voice = self.engine.voice
         self.engine.set_voice(voice_key)
         self.engine.speak(sample_phrase)
-        # Restore if not active
         cur_conf = self.config.get("voice", "bf_isabella")
         if cur_conf != voice_key:
             threading.Thread(target=lambda: (time.sleep(0.5), self.engine.set_voice(cur_conf)), daemon=True).start()
@@ -829,139 +880,184 @@ class MainWindow(ctk.CTk):
         self.engine.set_volume(vol)
 
     # =========================================================================
-    # VIEW 3: SHORTCUTS & BEHAVIOR
+    # VIEW 3: SHORTCUTS & BEHAVIOR (Window Sizing + Toggles, Budget: ~360px)
     # =========================================================================
     def _create_shortcuts_view(self):
-        frame = ctk.CTkScrollableFrame(self.view_container, fg_color="transparent")
+        container = ctk.CTkFrame(self.view_container, fg_color="transparent")
 
-        # --- 1. Global Shortcuts Reference Card ---
-        hk_card = ctk.CTkFrame(frame, corner_radius=12, fg_color="#131C2E", border_width=1, border_color="#1E293B")
-        hk_card.pack(fill="x", pady=(0, 14))
+        # --- 1. Window Sizing & Step Configuration Card ---
+        size_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        size_card.pack(fill="x", pady=(0, 8))
+
+        sz_inner = ctk.CTkFrame(size_card, fg_color="transparent")
+        sz_inner.pack(fill="x", padx=16, pady=10)
+
+        sz_top = ctk.CTkFrame(sz_inner, fg_color="transparent")
+        sz_top.pack(fill="x")
+
+        ctk.CTkLabel(
+            sz_top,
+            text="WINDOW DIMENSIONS & STEP SIZING",
+            font=("Segoe UI", 9, "bold"),
+            text_color="#818CF8"
+        ).pack(side="left")
+
+        sw, sh = self.screen_res
+        self.screen_info_lbl = ctk.CTkLabel(
+            sz_top,
+            text=f"Screen: {sw}×{sh} • Max Step: {self.max_w}×{self.max_h}",
+            font=("Segoe UI", 8),
+            text_color="#64748B"
+        )
+        self.screen_info_lbl.pack(side="right")
+
+        ctk.CTkLabel(
+            sz_inner,
+            text="Snaps in steps of 200px width and 100px height up to 1400×900 max based on available screen space.",
+            font=("Segoe UI", 9),
+            text_color="#94A3B8"
+        ).pack(anchor="w", pady=(1, 6))
+
+        # Size Presets Row
+        presets_row = ctk.CTkFrame(sz_inner, fg_color="transparent")
+        presets_row.pack(fill="x")
+
+        self.size_presets = [
+            (800, 580, "800×580 Compact"),
+            (1000, 620, "1000×620 Default"),
+            (1200, 700, "1200×700 Expanded"),
+            (1400, 900, "1400×900 Max")
+        ]
+
+        self.size_btn_widgets = {}
+        for w, h, lbl in self.size_presets:
+            btn = ctk.CTkButton(
+                presets_row,
+                text=lbl,
+                height=26,
+                corner_radius=10,
+                font=("Segoe UI", 9, "bold"),
+                fg_color="#1A2234",
+                hover_color="#2D3A54",
+                command=lambda tw=w, th=h: self._apply_window_size(tw, th)
+            )
+            # Disable if larger than max screen step allowance
+            if w > self.max_w or h > self.max_h:
+                btn.configure(state="disabled", fg_color="#101520", text_color="#475569")
+            btn.pack(side="left", padx=(0, 6))
+            self.size_btn_widgets[(w, h)] = btn
+
+        # --- 2. System-Wide Hotkeys Card ---
+        hk_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        hk_card.pack(fill="x", pady=(0, 8))
 
         hk_inner = ctk.CTkFrame(hk_card, fg_color="transparent")
-        hk_inner.pack(fill="x", padx=18, pady=16)
+        hk_inner.pack(fill="x", padx=16, pady=10)
 
         ctk.CTkLabel(
             hk_inner,
             text="SYSTEM-WIDE SHORTCUT KEYS",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 9, "bold"),
             text_color="#818CF8"
-        ).pack(anchor="w", pady=(0, 10))
+        ).pack(anchor="w", pady=(0, 6))
 
-        # Shortcut 1: Read
-        r1 = ctk.CTkFrame(hk_inner, fg_color="transparent")
-        r1.pack(fill="x", pady=4)
-        ctk.CTkLabel(r1, text="Read Selected Text:", font=("Segoe UI", 11, "bold"), width=160, anchor="w").pack(side="left")
+        r_hk = ctk.CTkFrame(hk_inner, fg_color="transparent")
+        r_hk.pack(fill="x")
 
-        pills1 = ctk.CTkFrame(r1, fg_color="transparent")
-        pills1.pack(side="left")
+        # Read
+        ctk.CTkLabel(r_hk, text="Read Selection:", font=("Segoe UI", 10, "bold"), text_color="#94A3B8").pack(side="left")
+        p1 = ctk.CTkFrame(r_hk, fg_color="transparent")
+        p1.pack(side="left", padx=(6, 20))
         for k in ["Ctrl", "+", "Shift", "+", "R"]:
             if k == "+":
-                ctk.CTkLabel(pills1, text="+", font=("Segoe UI", 12, "bold"), text_color="#64748B").pack(side="left", padx=3)
+                ctk.CTkLabel(p1, text="+", font=("Segoe UI", 10, "bold"), text_color="#64748B").pack(side="left", padx=2)
             else:
-                ctk.CTkLabel(pills1, text=k, font=("Segoe UI", 11, "bold"), fg_color="#1E1B4B", text_color="#C7D2FE", corner_radius=4, width=42, height=24).pack(side="left")
+                ctk.CTkLabel(p1, text=k, font=("Segoe UI", 9, "bold"), fg_color="#1E1B4B", text_color="#C7D2FE", corner_radius=4, width=38, height=20).pack(side="left")
 
-        # Shortcut 2: Stop
-        r2 = ctk.CTkFrame(hk_inner, fg_color="transparent")
-        r2.pack(fill="x", pady=6)
-        ctk.CTkLabel(r2, text="Stop Audio Playback:", font=("Segoe UI", 11, "bold"), width=160, anchor="w").pack(side="left")
-
-        pills2 = ctk.CTkFrame(r2, fg_color="transparent")
-        pills2.pack(side="left")
+        # Stop
+        ctk.CTkLabel(r_hk, text="Stop Speech:", font=("Segoe UI", 10, "bold"), text_color="#94A3B8").pack(side="left")
+        p2 = ctk.CTkFrame(r_hk, fg_color="transparent")
+        p2.pack(side="left", padx=(6, 0))
         for k in ["Ctrl", "+", "Shift", "+", "X"]:
             if k == "+":
-                ctk.CTkLabel(pills2, text="+", font=("Segoe UI", 12, "bold"), text_color="#64748B").pack(side="left", padx=3)
+                ctk.CTkLabel(p2, text="+", font=("Segoe UI", 10, "bold"), text_color="#64748B").pack(side="left", padx=2)
             else:
-                ctk.CTkLabel(pills2, text=k, font=("Segoe UI", 11, "bold"), fg_color="#3B1219", text_color="#FECACA", corner_radius=4, width=42, height=24).pack(side="left")
+                ctk.CTkLabel(p2, text=k, font=("Segoe UI", 9, "bold"), fg_color="#3B1219", text_color="#FECACA", corner_radius=4, width=38, height=20).pack(side="left")
 
-        # Modifier key release guarantee note
-        ctk.CTkLabel(
-            hk_inner,
-            text="✓ Keyboard emulation waits for physical Shift & Control keys to be released before triggering copy, guaranteeing 100% reliable capture in all browsers and PDF readers.",
-            font=("Segoe UI", 10),
-            text_color="#10B981",
-            justify="left"
-        ).pack(anchor="w", pady=(8, 0))
-
-        # --- 2. Behavior Toggles Card ---
-        pref_card = ctk.CTkFrame(frame, corner_radius=12, fg_color="#131C2E", border_width=1, border_color="#1E293B")
-        pref_card.pack(fill="x", pady=(0, 14))
+        # --- 3. Behavior Toggles Card ---
+        pref_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        pref_card.pack(fill="x", pady=(0, 0))
 
         pf_inner = ctk.CTkFrame(pref_card, fg_color="transparent")
-        pf_inner.pack(fill="x", padx=18, pady=16)
+        pf_inner.pack(fill="x", padx=16, pady=10)
 
         ctk.CTkLabel(
             pf_inner,
             text="AUTOMATION & CLIPBOARD BEHAVIOR",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 9, "bold"),
             text_color="#818CF8"
-        ).pack(anchor="w", pady=(0, 12))
+        ).pack(anchor="w", pady=(0, 8))
 
-        # Toggle 1: Preserve clipboard
+        switches_grid = ctk.CTkFrame(pf_inner, fg_color="transparent")
+        switches_grid.pack(fill="x")
+        switches_grid.grid_columnconfigure(0, weight=1)
+        switches_grid.grid_columnconfigure(1, weight=1)
+
+        # Switch 1: Preserve clipboard
         self.sw_restore_clip = ctk.CTkSwitch(
-            pf_inner,
+            switches_grid,
             text="Preserve Clipboard History",
-            font=("Segoe UI", 11, "bold"),
+            font=("Segoe UI", 10, "bold"),
             progress_color="#6366F1",
             command=self._on_pref_changed
         )
-        self.sw_restore_clip.pack(anchor="w", pady=(4, 1))
-        ctk.CTkLabel(
-            pf_inner,
-            text="Restores original clipboard content after capturing highlighted text, keeping your clipboard untouched.",
-            font=("Segoe UI", 10),
-            text_color="#94A3B8"
-        ).pack(anchor="w", padx=(48, 0), pady=(0, 8))
+        self.sw_restore_clip.grid(row=0, column=0, sticky="w", pady=4, padx=(0, 10))
 
-        # Toggle 2: Fallback to clipboard
+        # Switch 2: Fallback to clipboard
         self.sw_fallback_clip = ctk.CTkSwitch(
-            pf_inner,
+            switches_grid,
             text="Clipboard Fallback on Empty Selection",
-            font=("Segoe UI", 11, "bold"),
+            font=("Segoe UI", 10, "bold"),
             progress_color="#6366F1",
             command=self._on_pref_changed
         )
-        self.sw_fallback_clip.pack(anchor="w", pady=(4, 1))
-        ctk.CTkLabel(
-            pf_inner,
-            text="If no text is highlighted when pressing Ctrl+Shift+R, speak whatever text is already copied in the clipboard.",
-            font=("Segoe UI", 10),
-            text_color="#94A3B8"
-        ).pack(anchor="w", padx=(48, 0), pady=(0, 8))
+        self.sw_fallback_clip.grid(row=0, column=1, sticky="w", pady=4)
 
-        # Toggle 3: Floating Dynamic Island HUD
+        # Switch 3: Floating Dynamic Island HUD
         self.sw_floating_hud = ctk.CTkSwitch(
-            pf_inner,
-            text="Show Floating Dynamic Island HUD",
-            font=("Segoe UI", 11, "bold"),
+            switches_grid,
+            text="Show Floating Glass Pop-up HUD",
+            font=("Segoe UI", 10, "bold"),
             progress_color="#6366F1",
             command=self._on_pref_changed
         )
-        self.sw_floating_hud.pack(anchor="w", pady=(4, 1))
-        ctk.CTkLabel(
-            pf_inner,
-            text="Displays a sleek, draggable floating pill widget on screen while speaking with pause/stop micro-controls.",
-            font=("Segoe UI", 10),
-            text_color="#94A3B8"
-        ).pack(anchor="w", padx=(48, 0), pady=(0, 8))
+        self.sw_floating_hud.grid(row=1, column=0, sticky="w", pady=4, padx=(0, 10))
 
-        # Toggle 4: Minimize to tray on close
+        # Switch 4: Minimize to tray on close
         self.sw_min_to_tray = ctk.CTkSwitch(
-            pf_inner,
+            switches_grid,
             text="Minimize to System Tray on Close (X)",
-            font=("Segoe UI", 11, "bold"),
+            font=("Segoe UI", 10, "bold"),
             progress_color="#6366F1",
             command=self._on_pref_changed
         )
-        self.sw_min_to_tray.pack(anchor="w", pady=(4, 1))
-        ctk.CTkLabel(
-            pf_inner,
-            text="Keeps SpeakThat running in the Windows notification tray so hotkeys remain active.",
-            font=("Segoe UI", 10),
-            text_color="#94A3B8"
-        ).pack(anchor="w", padx=(48, 0), pady=(0, 4))
+        self.sw_min_to_tray.grid(row=1, column=1, sticky="w", pady=4)
 
-        return frame
+        return container
+
+    def _apply_window_size(self, target_w, target_h):
+        w = min(self.max_w, max(800, target_w))
+        h = min(self.max_h, max(580, target_h))
+        self.geometry(f"{w}x{h}")
+        self.config.set("window_width", w)
+        self.config.set("window_height", h)
+
+        # Highlight active preset button
+        for (pw, ph), btn in self.size_btn_widgets.items():
+            if pw == w and ph == h:
+                btn.configure(fg_color="#6366F1", hover_color="#4F46E5")
+            elif pw <= self.max_w and ph <= self.max_h:
+                btn.configure(fg_color="#1A2234", hover_color="#2D3A54")
 
     def _on_pref_changed(self):
         self.config.set("restore_clipboard", bool(self.sw_restore_clip.get()))
@@ -970,108 +1066,102 @@ class MainWindow(ctk.CTk):
         self.config.set("minimize_to_tray_on_close", bool(self.sw_min_to_tray.get()))
 
     # =========================================================================
-    # VIEW 4: MODEL & BENCHMARK
+    # VIEW 4: MODEL & BENCHMARK (Budget: ~330px, fits with 0 scrollbars)
     # =========================================================================
     def _create_model_view(self):
-        frame = ctk.CTkScrollableFrame(self.view_container, fg_color="transparent")
+        container = ctk.CTkFrame(self.view_container, fg_color="transparent")
 
         # --- 1. Technical Specs Card ---
-        specs_card = ctk.CTkFrame(frame, corner_radius=12, fg_color="#131C2E", border_width=1, border_color="#1E293B")
-        specs_card.pack(fill="x", pady=(0, 14))
+        specs_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        specs_card.pack(fill="x", pady=(0, 8))
 
         sp_inner = ctk.CTkFrame(specs_card, fg_color="transparent")
-        sp_inner.pack(fill="x", padx=18, pady=16)
+        sp_inner.pack(fill="x", padx=16, pady=10)
 
         ctk.CTkLabel(
             sp_inner,
             text="PARADEE 8M ARCHITECTURE & HARDWARE ENGINE",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 9, "bold"),
             text_color="#818CF8"
-        ).pack(anchor="w", pady=(0, 10))
+        ).pack(anchor="w", pady=(0, 6))
 
         spec_grid = [
             ("Neural Model", "Paradee-8M-v1.2 (Quantized Int8 ONNX Graph)"),
             ("Parameter Count", "8,200,000 parameters (Ultra-lightweight)"),
-            ("Audio Output", "24,000 Hz (24 kHz) Mono, 32-bit Float Streaming"),
+            ("Audio Output", "24,000 Hz Mono, 32-bit Float Streaming"),
             ("Inference Engine", "ONNX Runtime CPU (Pure Offline / Zero Cloud)"),
             ("G2P Phonemizer", "Misaki Pure-Python G2P + Spacy Tokenizer"),
-            ("Streaming Pipeline", "Sentence-chunked async synthesis into SoundDevice ring buffer")
+            ("Streaming Pipeline", "Sentence-chunked async synthesis into SoundDevice")
         ]
 
         for label, val in spec_grid:
             row = ctk.CTkFrame(sp_inner, fg_color="transparent")
-            row.pack(fill="x", pady=3)
-            ctk.CTkLabel(row, text=label, font=("Segoe UI", 11, "bold"), text_color="#94A3B8", width=140, anchor="w").pack(side="left")
-            ctk.CTkLabel(row, text=val, font=("Segoe UI", 11), text_color="#E2E8F0", anchor="w").pack(side="left")
+            row.pack(fill="x", pady=1)
+            ctk.CTkLabel(row, text=label, font=("Segoe UI", 10, "bold"), text_color="#94A3B8", width=130, anchor="w").pack(side="left")
+            ctk.CTkLabel(row, text=val, font=("Segoe UI", 10), text_color="#E2E8F0", anchor="w").pack(side="left")
 
         # --- 2. Live Synthesis Latency Benchmark Tool ---
-        bench_card = ctk.CTkFrame(frame, corner_radius=12, fg_color="#131C2E", border_width=1, border_color="#1E293B")
-        bench_card.pack(fill="x", pady=(0, 14))
+        bench_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        bench_card.pack(fill="x", pady=(0, 0))
 
         bc_inner = ctk.CTkFrame(bench_card, fg_color="transparent")
-        bc_inner.pack(fill="x", padx=18, pady=16)
+        bc_inner.pack(fill="x", padx=16, pady=10)
 
         bc_top = ctk.CTkFrame(bc_inner, fg_color="transparent")
-        bc_top.pack(fill="x", pady=(0, 10))
+        bc_top.pack(fill="x", pady=(0, 6))
 
         ctk.CTkLabel(
             bc_top,
             text="LIVE SYNTHESIS LATENCY BENCHMARK",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 9, "bold"),
             text_color="#818CF8"
         ).pack(side="left")
 
         self.bench_btn = ctk.CTkButton(
             bc_top,
             text="⚡ Run Benchmark Now",
-            font=("Segoe UI", 11, "bold"),
+            font=("Segoe UI", 10, "bold"),
+            corner_radius=12,
+            height=26,
             fg_color="#6366F1",
             hover_color="#4F46E5",
             command=self._run_latency_benchmark
         )
         self.bench_btn.pack(side="right")
 
-        ctk.CTkLabel(
-            bc_inner,
-            text="Measures raw ONNX inference execution time and Real-Time Factor (RTF) on this machine.",
-            font=("Segoe UI", 10),
-            text_color="#94A3B8"
-        ).pack(anchor="w", pady=(0, 12))
-
-        # Metrics 3-Card Row
         metrics_row = ctk.CTkFrame(bc_inner, fg_color="transparent")
-        metrics_row.pack(fill="x", pady=(0, 8))
+        metrics_row.pack(fill="x", pady=(2, 6))
 
-        # Card A: Latency
-        m_a = ctk.CTkFrame(metrics_row, fg_color="#0F172A", corner_radius=8, border_width=1, border_color="#1E293B")
-        m_a.pack(side="left", fill="both", expand=True, padx=(0, 6))
-        ctk.CTkLabel(m_a, text="SYNTHESIS TIME", font=("Segoe UI", 9, "bold"), text_color="#818CF8").pack(anchor="w", padx=12, pady=(10, 2))
-        self.bench_time_lbl = ctk.CTkLabel(m_a, text="-- ms", font=("Segoe UI", 18, "bold"), text_color="#F8FAFC")
-        self.bench_time_lbl.pack(anchor="w", padx=12, pady=(0, 10))
+        # Latency Card
+        m_a = ctk.CTkFrame(metrics_row, fg_color="#0F1420", corner_radius=10, border_width=1, border_color="#1F283B")
+        m_a.pack(side="left", fill="both", expand=True, padx=(0, 4))
+        ctk.CTkLabel(m_a, text="SYNTHESIS TIME", font=("Segoe UI", 8, "bold"), text_color="#818CF8").pack(anchor="w", padx=10, pady=(6, 1))
+        self.bench_time_lbl = ctk.CTkLabel(m_a, text="-- ms", font=("Segoe UI", 15, "bold"), text_color="#F8FAFC")
+        self.bench_time_lbl.pack(anchor="w", padx=10, pady=(0, 6))
 
-        # Card B: RTF
-        m_b = ctk.CTkFrame(metrics_row, fg_color="#0F172A", corner_radius=8, border_width=1, border_color="#1E293B")
-        m_b.pack(side="left", fill="both", expand=True, padx=3)
-        ctk.CTkLabel(m_b, text="REAL-TIME FACTOR", font=("Segoe UI", 9, "bold"), text_color="#10B981").pack(anchor="w", padx=12, pady=(10, 2))
-        self.bench_rtf_lbl = ctk.CTkLabel(m_b, text="-- x", font=("Segoe UI", 18, "bold"), text_color="#F8FAFC")
-        self.bench_rtf_lbl.pack(anchor="w", padx=12, pady=(0, 10))
+        # RTF Card
+        m_b = ctk.CTkFrame(metrics_row, fg_color="#0F1420", corner_radius=10, border_width=1, border_color="#1F283B")
+        m_b.pack(side="left", fill="both", expand=True, padx=2)
+        ctk.CTkLabel(m_b, text="REAL-TIME FACTOR", font=("Segoe UI", 8, "bold"), text_color="#10B981").pack(anchor="w", padx=10, pady=(6, 1))
+        self.bench_rtf_lbl = ctk.CTkLabel(m_b, text="-- x", font=("Segoe UI", 15, "bold"), text_color="#F8FAFC")
+        self.bench_rtf_lbl.pack(anchor="w", padx=10, pady=(0, 6))
 
-        # Card C: Audio Generated
-        m_c = ctk.CTkFrame(metrics_row, fg_color="#0F172A", corner_radius=8, border_width=1, border_color="#1E293B")
-        m_c.pack(side="left", fill="both", expand=True, padx=(6, 0))
-        ctk.CTkLabel(m_c, text="AUDIO DURATION", font=("Segoe UI", 9, "bold"), text_color="#38BDF8").pack(anchor="w", padx=12, pady=(10, 2))
-        self.bench_dur_lbl = ctk.CTkLabel(m_c, text="-- s", font=("Segoe UI", 18, "bold"), text_color="#F8FAFC")
-        self.bench_dur_lbl.pack(anchor="w", padx=12, pady=(0, 10))
+        # Audio Duration Card
+        m_c = ctk.CTkFrame(metrics_row, fg_color="#0F1420", corner_radius=10, border_width=1, border_color="#1F283B")
+        m_c.pack(side="left", fill="both", expand=True, padx=(4, 0))
+        ctk.CTkLabel(m_c, text="AUDIO DURATION", font=("Segoe UI", 8, "bold"), text_color="#38BDF8").pack(anchor="w", padx=10, pady=(6, 1))
+        self.bench_dur_lbl = ctk.CTkLabel(m_c, text="-- s", font=("Segoe UI", 15, "bold"), text_color="#F8FAFC")
+        self.bench_dur_lbl.pack(anchor="w", padx=10, pady=(0, 6))
 
         self.bench_status_lbl = ctk.CTkLabel(
             bc_inner,
-            text="Click 'Run Benchmark Now' to test Paradee 8M inference speed.",
-            font=("Segoe UI", 10, "italic"),
+            text="Click 'Run Benchmark Now' to test Paradee 8M inference speed on CPU.",
+            font=("Segoe UI", 9, "italic"),
             text_color="#64748B"
         )
-        self.bench_status_lbl.pack(anchor="w", pady=(4, 0))
+        self.bench_status_lbl.pack(anchor="w")
 
-        return frame
+        return container
 
     def _run_latency_benchmark(self):
         self.bench_btn.configure(state="disabled", text="Running...")
@@ -1079,7 +1169,6 @@ class MainWindow(ctk.CTk):
 
         def _bench_worker():
             try:
-                # Wait for engine readiness if needed
                 for _ in range(30):
                     if self.engine.is_ready():
                         break
@@ -1099,7 +1188,7 @@ class MainWindow(ctk.CTk):
                     self.bench_rtf_lbl.configure(text=f"{rtf:.1f}x RT")
                     self.bench_dur_lbl.configure(text=f"{audio_dur:.2f} s")
                     self.bench_status_lbl.configure(
-                        text=f"Benchmark completed successfully! Generation is {rtf:.1f}x faster than real-time playback.",
+                        text=f"Benchmark completed! Generation is {rtf:.1f}x faster than real-time playback.",
                         text_color="#10B981"
                     )
                     self.bench_btn.configure(state="normal", text="⚡ Run Benchmark Now")
@@ -1151,6 +1240,13 @@ class MainWindow(ctk.CTk):
             self.sw_min_to_tray.select()
         else:
             self.sw_min_to_tray.deselect()
+
+        # 5. Sizing preset button state
+        cur_w = int(self.config.get("window_width", 1000))
+        cur_h = int(self.config.get("window_height", 620))
+        for (pw, ph), btn in self.size_btn_widgets.items():
+            if pw == cur_w and ph == cur_h:
+                btn.configure(fg_color="#6366F1", hover_color="#4F46E5")
 
     def _on_speak_box_text(self):
         text = self.text_box.get("1.0", "end").strip()
@@ -1206,10 +1302,19 @@ class MainWindow(ctk.CTk):
         """Thread-safe sentence update."""
         def _update():
             s = sentence.strip().replace("\n", " ")
-            if len(s) > 120:
-                s = s[:117] + "…"
+            if len(s) > 110:
+                s = s[:107] + "…"
             self.live_sentence_label.configure(text=f'“{s}”')
         self.after(0, _update)
+
+    def destroy(self):
+        self._is_alive = False
+        if hasattr(self, "_wave_after_id") and self._wave_after_id:
+            try:
+                self.after_cancel(self._wave_after_id)
+            except Exception:
+                pass
+        super().destroy()
 
     def _on_window_close(self):
         if self.config.get("minimize_to_tray_on_close", True):

@@ -16,6 +16,8 @@ DEFAULT_CONFIG = {
     "minimize_to_tray_on_close": True,
     "start_minimized": False,
     "sound_feedback": True,
+    "window_width": 1000,
+    "window_height": 700,
 }
 
 VOICE_NAMES = {
