@@ -205,14 +205,19 @@ class FloatingHUD:
         self.stop_btn.pack(side="left", padx=3)
 
     def _draw_top_glow(self, event=None):
-        w = self.top_glow.winfo_width()
-        if w <= 1:
+        if not getattr(self, "_is_alive", True):
             return
-        self.top_glow.delete("all")
-        # Smooth warm champagne highlight centered along top edge
-        left = int(w * 0.15)
-        right = int(w * 0.85)
-        self.top_glow.create_line(left, 1, right, 1, width=2, capstyle=tk.ROUND, fill="#FAEDCD")
+        try:
+            w = self.top_glow.winfo_width()
+            if w <= 1:
+                return
+            self.top_glow.delete("all")
+            # Smooth warm champagne highlight centered along top edge
+            left = int(w * 0.15)
+            right = int(w * 0.85)
+            self.top_glow.create_line(left, 1, right, 1, width=2, capstyle=tk.ROUND, fill="#FAEDCD")
+        except Exception:
+            pass
 
     def _start_drag(self, event):
         self._offset_x = event.x_root - self.window.winfo_x()
@@ -277,23 +282,27 @@ class FloatingHUD:
         if not getattr(self, "_is_alive", True) or not self._is_animating or self._is_paused:
             return
 
-        self._anim_phase += 0.22
+        try:
+            self._anim_phase += 0.22
 
-        # 3 frequencies matching the HTML animation: 1.1s, 0.8s, 1.3s
-        h1 = 4 + int(10 * abs(math.sin(self._anim_phase * 1.1)))
-        h2 = 4 + int(13 * abs(math.sin(self._anim_phase * 1.5 + 0.3)))
-        h3 = 4 + int(10 * abs(math.sin(self._anim_phase * 0.9 + 0.7)))
+            # 3 frequencies matching the HTML animation: 1.1s, 0.8s, 1.3s
+            h1 = 4 + int(10 * abs(math.sin(self._anim_phase * 1.1)))
+            h2 = 4 + int(13 * abs(math.sin(self._anim_phase * 1.5 + 0.3)))
+            h3 = 4 + int(10 * abs(math.sin(self._anim_phase * 0.9 + 0.7)))
 
-        # Update coords centered around y=12
-        self.wave_canvas.coords(self.wave_bars[0], 7, max(3, 12 - h1 // 2), 7, min(21, 12 + h1 // 2))
-        self.wave_canvas.coords(self.wave_bars[1], 15, max(2, 12 - h2 // 2), 15, min(22, 12 + h2 // 2))
-        self.wave_canvas.coords(self.wave_bars[2], 23, max(3, 13 - h3 // 2), 23, min(21, 13 + h3 // 2))
+            # Update coords centered around y=12
+            self.wave_canvas.coords(self.wave_bars[0], 7, max(3, 12 - h1 // 2), 7, min(21, 12 + h1 // 2))
+            self.wave_canvas.coords(self.wave_bars[1], 15, max(2, 12 - h2 // 2), 15, min(22, 12 + h2 // 2))
+            self.wave_canvas.coords(self.wave_bars[2], 23, max(3, 13 - h3 // 2), 23, min(21, 13 + h3 // 2))
 
-        self.wave_canvas.itemconfig(self.wave_bars[0], fill="#FAEDCD")
-        self.wave_canvas.itemconfig(self.wave_bars[1], fill="#FDE68A")
-        self.wave_canvas.itemconfig(self.wave_bars[2], fill="#FAEDCD")
+            self.wave_canvas.itemconfig(self.wave_bars[0], fill="#FAEDCD")
+            self.wave_canvas.itemconfig(self.wave_bars[1], fill="#FDE68A")
+            self.wave_canvas.itemconfig(self.wave_bars[2], fill="#FAEDCD")
 
-        self.window.after(50, self._animate_wave)
+            if getattr(self, "_is_alive", True):
+                self.window.after(50, self._animate_wave)
+        except Exception:
+            pass
 
     def _handle_pause_click(self):
         if self.on_pause_toggle:

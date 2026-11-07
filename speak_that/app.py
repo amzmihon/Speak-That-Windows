@@ -89,7 +89,10 @@ class SpeakThatApp:
 
         try:
             self.window.mainloop()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, SystemExit):
+            self.shutdown()
+        except Exception as e:
+            print(f"[App] Application event loop ended: {e}", flush=True)
             self.shutdown()
 
     def show_window(self):
@@ -175,14 +178,33 @@ class SpeakThatApp:
 
     def shutdown(self):
         """Clean application termination."""
-        print("[App] Shutting down SpeakThat...")
-        self.hotkeys.stop()
-        self.engine.stop()
-        self.tray.stop()
+        if getattr(self, "_is_shutting_down", False):
+            return
+        self._is_shutting_down = True
+        print("[App] Shutting down SpeakThat...", flush=True)
         try:
-            self.window.after(0, self.window.destroy)
-            self.window.after(50, self.window.quit)
+            self.hotkeys.stop()
+        except Exception:
+            pass
+        try:
+            self.engine.stop()
+        except Exception:
+            pass
+        try:
+            self.tray.stop()
+        except Exception:
+            pass
+        try:
+            self.hud.destroy()
+        except Exception:
+            pass
+        try:
+            self.window.quit()
+        except Exception:
+            pass
+        try:
+            self.window.destroy()
         except Exception:
             pass
         # Fallback exit after short grace period
-        threading.Thread(target=lambda: (time.sleep(0.3), os._exit(0)), daemon=True).start()
+        threading.Thread(target=lambda: (time.sleep(0.15), os._exit(0)), daemon=True).start()

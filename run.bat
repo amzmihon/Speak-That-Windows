@@ -8,22 +8,21 @@ echo       Powered by Paradee 8M ONNX Speech Engine
 echo ===================================================
 echo.
 
-if exist ".venv\Scripts\python.exe" goto use_venv
-goto use_system
+if exist ".venv\Scripts\python.exe" (
+    echo [*] Starting SpeakThat using virtual environment...
+    ".venv\Scripts\python.exe" -u main.py
+    set "APP_EXIT_CODE=%ERRORLEVEL%"
+    goto finish
+)
 
-:use_venv
-echo [*] Starting SpeakThat using virtual environment...
-".venv\Scripts\python.exe" -u main.py
-goto finish
-
-:use_system
-echo [*] Starting SpeakThat using system Python...
+echo [!] Virtual environment (.venv) not found. Trying system Python...
 python -u main.py
+set "APP_EXIT_CODE=%ERRORLEVEL%"
 goto finish
 
 :finish
-if %ERRORLEVEL% NEQ 0 (
+if "%APP_EXIT_CODE%" NEQ "0" (
     echo.
-    echo [!] Application exited with error code %ERRORLEVEL%.
+    echo [!] Application exited with code %APP_EXIT_CODE%.
     pause
 )

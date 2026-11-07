@@ -94,12 +94,6 @@ class MainWindow(ctk.CTk):
         self.minsize(800, 580)
         self.maxsize(self.max_w, self.max_h)
 
-        # Enable native step resize snapping (width step 200, height step 100)
-        try:
-            self.wm_grid(800, 580, 200, 100)
-        except Exception:
-            pass
-
         # Animation state for live waveform
         self._is_speaking_anim = False
         self._wave_phase = 0.0
@@ -589,44 +583,52 @@ class MainWindow(ctk.CTk):
         return container
 
     def _layout_waveform_bars(self, event=None):
+        if not getattr(self, "_is_alive", True):
+            return
         if not self._wave_canvas:
             return
-        w = self._wave_canvas.winfo_width()
-        if w < 100:
-            w = 500
-        n = len(self._wave_bars)
-        spacing = w / (n + 1)
-        for i, bar in enumerate(self._wave_bars):
-            x = int((i + 1) * spacing)
-            self._wave_canvas.coords(bar, x, 11, x, 17)
+        try:
+            w = self._wave_canvas.winfo_width()
+            if w < 100:
+                w = 500
+            n = len(self._wave_bars)
+            spacing = w / (n + 1)
+            for i, bar in enumerate(self._wave_bars):
+                x = int((i + 1) * spacing)
+                self._wave_canvas.coords(bar, x, 11, x, 17)
+        except Exception:
+            pass
 
     def _animate_stage_wave(self):
         if not getattr(self, "_is_alive", True):
             return
-        if self._wave_canvas and self._wave_bars:
-            w = self._wave_canvas.winfo_width()
-            n = len(self._wave_bars)
-            spacing = w / (n + 1) if w > 50 else 30
+        try:
+            if self._wave_canvas and self._wave_bars:
+                w = self._wave_canvas.winfo_width()
+                n = len(self._wave_bars)
+                spacing = w / (n + 1) if w > 50 else 30
 
-            self._wave_phase += 0.22
-            is_active = self._is_speaking_anim
+                self._wave_phase += 0.22
+                is_active = self._is_speaking_anim
 
-            for i, bar in enumerate(self._wave_bars):
-                x = int((i + 1) * spacing)
-                if is_active:
-                    h = 5 + int(10 * (1 + math.sin(self._wave_phase + i * 0.7)))
-                    y1 = max(2, 14 - h // 2)
-                    y2 = min(26, 14 + h // 2)
-                    color = "#818CF8" if (i % 2 == 0) else "#6366F1"
-                else:
-                    y1, y2 = 12, 16
-                    color = "#222D42"
+                for i, bar in enumerate(self._wave_bars):
+                    x = int((i + 1) * spacing)
+                    if is_active:
+                        h = 5 + int(10 * (1 + math.sin(self._wave_phase + i * 0.7)))
+                        y1 = max(2, 14 - h // 2)
+                        y2 = min(26, 14 + h // 2)
+                        color = "#818CF8" if (i % 2 == 0) else "#6366F1"
+                    else:
+                        y1, y2 = 12, 16
+                        color = "#222D42"
 
-                self._wave_canvas.coords(bar, x, y1, x, y2)
-                self._wave_canvas.itemconfig(bar, fill=color)
+                    self._wave_canvas.coords(bar, x, y1, x, y2)
+                    self._wave_canvas.itemconfig(bar, fill=color)
 
-        if getattr(self, "_is_alive", True):
-            self._wave_after_id = self.after(50, self._animate_stage_wave)
+            if getattr(self, "_is_alive", True):
+                self._wave_after_id = self.after(50, self._animate_stage_wave)
+        except Exception:
+            pass
 
     def _update_text_metrics(self, event=None):
         raw = self.text_box.get("1.0", "end-1c").strip()
