@@ -68,13 +68,13 @@ class TrayManager:
         return Menu(
             item(f"SpeakThat ({self._status_text})", lambda: None, enabled=False),
             Menu.SEPARATOR,
-            item("Read Selected Text (Ctrl+Shift+R)", lambda icon, it: self.on_read() if self.on_read else None, default=True),
+            item("Open Settings Dashboard", lambda icon, it: self.on_show_window() if self.on_show_window else None, default=True),
+            item("Read Selected Text (Ctrl+Shift+R)", lambda icon, it: self.on_read() if self.on_read else None),
             item("Stop Reading (Ctrl+Shift+X)", lambda icon, it: self.on_stop() if self.on_stop else None),
             Menu.SEPARATOR,
             item("Voice", Menu(*voice_items)),
             item("Speed", Menu(*speed_items)),
             Menu.SEPARATOR,
-            item("Open Settings Dashboard", lambda icon, it: self.on_show_window() if self.on_show_window else None),
             item("Exit SpeakThat", lambda icon, it: self._handle_exit()),
         )
 

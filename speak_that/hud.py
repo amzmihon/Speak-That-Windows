@@ -19,22 +19,6 @@ import customtkinter as ctk
 TRANS_KEY_COLOR = "#000001"
 
 
-def get_fluent_font():
-    """Detect the best installed Fluent / Segoe icon font on this Windows system."""
-    try:
-        import tkinter.font as tkfont
-        families = tkfont.families()
-        for f in ["Segoe Fluent Icons", "Segoe MDL2 Assets", "Segoe UI Symbol"]:
-            if f in families:
-                return f
-    except Exception:
-        pass
-    return "Segoe UI"
-
-
-FLUENT_FONT = get_fluent_font()
-
-
 class FloatingHUD:
     """A soft, borderless, draggable floating pill widget with WinUI 3 Acrylic styling."""
 
@@ -47,6 +31,9 @@ class FloatingHUD:
         self.window.withdraw()
         self.window.overrideredirect(True)
         self.window.attributes("-topmost", True)
+
+        # Detect optimal icon font and glyph symbols after window handle exists
+        self.icon_font, self.icons = self._detect_icon_font_and_glyphs()
 
         # Semi-transparency & Transparent Color Keying (completely removes outer square corners)
         try:
@@ -75,6 +62,21 @@ class FloatingHUD:
         self._anim_phase = 0.0
 
         self._build_ui()
+
+    def _detect_icon_font_and_glyphs(self):
+        """Detect the best installed Fluent / Segoe icon font and return font name and glyph mapping."""
+        try:
+            import tkinter.font as tkfont
+            families = tkfont.families(self.window)
+            if "Segoe Fluent Icons" in families:
+                return "Segoe Fluent Icons", {"pause": "\uE769", "play": "\uE768", "stop": "\uE71A"}
+            if "Segoe MDL2 Assets" in families:
+                return "Segoe MDL2 Assets", {"pause": "\uE769", "play": "\uE768", "stop": "\uE71A"}
+            if "Segoe UI Symbol" in families:
+                return "Segoe UI Symbol", {"pause": "\u23F8", "play": "\u25B6", "stop": "\u25FC"}
+        except Exception:
+            pass
+        return "Segoe UI", {"pause": "❚❚", "play": "▶", "stop": "■"}
 
     def _apply_dwm_rounding(self):
         try:
@@ -210,7 +212,7 @@ class FloatingHUD:
         # Pause / Resume Button (Warm Champagne)
         self.pause_btn = ctk.CTkButton(
             self.btn_frame,
-            text="\uE769",  # Fluent Pause Icon
+            text=self.icons["pause"],
             width=32,
             height=32,
             corner_radius=12,
@@ -219,7 +221,7 @@ class FloatingHUD:
             border_width=1,
             border_color="#544636",
             text_color="#FAEDCD",
-            font=(FLUENT_FONT, 11),
+            font=(self.icon_font, 12 if "Segoe" in self.icon_font else 10),
             command=self._handle_pause_click
         )
         self.pause_btn.pack(side="left", padx=3)
@@ -227,7 +229,7 @@ class FloatingHUD:
         # Stop Button (Rose 500 Tint)
         self.stop_btn = ctk.CTkButton(
             self.btn_frame,
-            text="\uE71A",  # Fluent Stop Icon
+            text=self.icons["stop"],
             width=32,
             height=32,
             corner_radius=12,
@@ -236,7 +238,7 @@ class FloatingHUD:
             border_width=1,
             border_color="#7F2736",
             text_color="#FECDD3",
-            font=(FLUENT_FONT, 11),
+            font=(self.icon_font, 12 if "Segoe" in self.icon_font else 10),
             command=self._handle_stop_click
         )
         self.stop_btn.pack(side="left", padx=3)
@@ -253,13 +255,43 @@ class FloatingHUD:
     def show(self, sentence="Reading selected text..."):
         self._is_paused = False
         self.update_sentence(sentence)
-        self.pause_btn.configure(text="\uE769")  # Pause icon
+        self.pause_btn.configure(text=self.icons["pause"])
         self.status_label.configure(text="Reading selected text...", text_color="#FAEDCD")
         self.dot_canvas.itemconfig(self.dot_id, fill="#FCD34D")
         self.capsule.configure(border_color="#5E4F3D")
         self.window.deiconify()
         self.window.lift()
         self.start_wave_animation()
+
+    def show_warming_up(self, sentence="Loading AI model..."):
+        self._is_paused = False
+        self.update_sentence(sentence)
+        self.pause_btn.configure(text=self.icons["pause"])
+        self.status_label.configure(text="AI Voice Engine Warming Up...", text_color="#FCD34D")
+        self.dot_canvas.itemconfig(self.dot_id, fill="#F59E0B")
+        self.capsule.configure(border_color="#785936")
+        self.window.deiconify()
+        self.window.lift()
+        self.start_wave_animation()
+
+    def update_status(self, status):
+        if not getattr(self, "_is_alive", True):
+            return
+        try:
+            if status == "Speaking":
+                self.status_label.configure(text="Reading selected text...", text_color="#FAEDCD")
+                self.dot_canvas.itemconfig(self.dot_id, fill="#FCD34D")
+            elif status == "Synthesizing...":
+                self.status_label.configure(text="Synthesizing audio...", text_color="#FDE68A")
+                self.dot_canvas.itemconfig(self.dot_id, fill="#FDE68A")
+            elif "Warming" in status or "Loading" in status:
+                self.status_label.configure(text="AI Engine Warming Up...", text_color="#F59E0B")
+                self.dot_canvas.itemconfig(self.dot_id, fill="#F59E0B")
+            elif status == "Paused":
+                self.status_label.configure(text="Paused (Click to resume)", text_color="#F59E0B")
+                self.dot_canvas.itemconfig(self.dot_id, fill="#F59E0B")
+        except Exception:
+            pass
 
     def hide(self):
         self.stop_wave_animation()
@@ -274,13 +306,13 @@ class FloatingHUD:
     def set_paused_state(self, is_paused):
         self._is_paused = is_paused
         if is_paused:
-            self.pause_btn.configure(text="\uE768")  # Play icon
+            self.pause_btn.configure(text=self.icons["play"])
             self.status_label.configure(text="Paused (Click to resume)", text_color="#F59E0B")
             self.dot_canvas.itemconfig(self.dot_id, fill="#F59E0B")
             self.capsule.configure(border_color="#8C775D")
             self.stop_wave_animation()
         else:
-            self.pause_btn.configure(text="\uE769")  # Pause icon
+            self.pause_btn.configure(text=self.icons["pause"])
             self.status_label.configure(text="Reading selected text...", text_color="#FAEDCD")
             self.dot_canvas.itemconfig(self.dot_id, fill="#FCD34D")
             self.capsule.configure(border_color="#5E4F3D")

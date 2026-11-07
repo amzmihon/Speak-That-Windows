@@ -2,6 +2,7 @@
 
 import os
 import sys
+import socket
 import threading
 import time
 
@@ -13,11 +14,28 @@ from .selection import get_selected_text
 from .tray import TrayManager
 from .ui import MainWindow
 
+IPC_PORT = 49218
+
+
+def notify_existing_instance(port=IPC_PORT):
+    """Signals an already running SpeakThat instance to bring its window to the front."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.8)
+            s.connect(("127.0.0.1", port))
+            s.sendall(b"SHOW\n")
+            return True
+    except Exception:
+        return False
+
 
 class SpeakThatApp:
     """Main application lifecycle controller."""
 
     def __init__(self):
+        self._is_running = True
+        self._ipc_server = None
+
         # 1. Config
         self.config = Config()
 
@@ -71,6 +89,9 @@ class SpeakThatApp:
         self.engine.on_complete = self._on_engine_complete
 
     def start(self):
+        # Start single-instance listener so launching shortcuts brings existing window to front
+        self._start_ipc_server()
+
         print("[+] Starting system tray icon...", flush=True)
         self.tray.start()
 
@@ -94,6 +115,29 @@ class SpeakThatApp:
         except Exception as e:
             print(f"[App] Application event loop ended: {e}", flush=True)
             self.shutdown()
+
+    def _start_ipc_server(self):
+        """Listens on local port for 'SHOW' signals from duplicate launches."""
+        def _server():
+            try:
+                srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                srv.bind(("127.0.0.1", IPC_PORT))
+                srv.listen(5)
+                self._ipc_server = srv
+                while self._is_running:
+                    try:
+                        conn, _ = srv.accept()
+                        data = conn.recv(64)
+                        if b"SHOW" in data:
+                            self.show_window()
+                        conn.close()
+                    except Exception:
+                        break
+            except Exception:
+                pass
+
+        threading.Thread(target=_server, daemon=True).start()
 
     def show_window(self):
         """Restore and focus the main settings dashboard window."""
@@ -127,10 +171,13 @@ class SpeakThatApp:
                 preview = preview[:47] + "..."
             print(f"[Reader] Speaking ({len(text)} chars): \"{preview}\"", flush=True)
 
-            # Show HUD if enabled
+            # Show HUD with warming up state or regular reading state
             if self.config.get("show_floating_hud", True):
                 first_line = text.strip().split("\n")[0]
-                self.window.after(0, lambda: self.hud.show(first_line))
+                if not self.engine.is_ready():
+                    self.window.after(0, lambda: self.hud.show_warming_up(first_line))
+                else:
+                    self.window.after(0, lambda: self.hud.show(first_line))
 
             # Start reading
             self.engine.speak(text)
@@ -165,6 +212,8 @@ class SpeakThatApp:
     def _on_engine_status(self, status):
         self.window.update_status(status)
         self.tray.set_status(status)
+        if self.config.get("show_floating_hud", True):
+            self.window.after(0, lambda: self.hud.update_status(status))
 
     def _on_engine_sentence(self, sentence):
         self.window.update_sentence(sentence)
@@ -181,6 +230,12 @@ class SpeakThatApp:
         if getattr(self, "_is_shutting_down", False):
             return
         self._is_shutting_down = True
+        self._is_running = False
+        if self._ipc_server:
+            try:
+                self._ipc_server.close()
+            except Exception:
+                pass
         print("[App] Shutting down SpeakThat...", flush=True)
         try:
             self.hotkeys.stop()

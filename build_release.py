@@ -158,25 +158,33 @@ echo Installing SpeakThat to user Programs folder...
 set "TARGET_DIR=%LOCALAPPDATA%\\Programs\\SpeakThat"
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
 
-echo [*] Copying files to %TARGET_DIR%...
-xcopy /E /I /Y * "%TARGET_DIR%\\" > nul
+echo [*] Stopping running SpeakThat instances if any...
+taskkill /F /IM SpeakThat.exe > nul 2>&1
+
+echo [*] Copying application files to %TARGET_DIR%...
+xcopy /E /I /Y /Q * "%TARGET_DIR%\\" > nul
 
 echo [*] Creating Desktop and Start Menu Shortcuts...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ws = New-Object -ComObject WScript.Shell; ^
-   $s1 = $ws.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath('Desktop'), 'SpeakThat.lnk')); ^
+   $d = Join-Path ([Environment]::GetFolderPath('Desktop')) 'SpeakThat.lnk'; ^
+   $s1 = $ws.CreateShortcut($d); ^
    $s1.TargetPath = '%TARGET_DIR%\\SpeakThat.exe'; ^
-   $s1.IconLocation = '%TARGET_DIR%\\assets\\icon.ico'; ^
+   $s1.WorkingDirectory = '%TARGET_DIR%'; ^
+   $s1.IconLocation = '%TARGET_DIR%\\assets\\icon.ico,0'; ^
    $s1.Description = 'SpeakThat - Windows Text Reader'; ^
    $s1.Save(); ^
-   $s2 = $ws.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath('StartMenu'), 'Programs', 'SpeakThat.lnk')); ^
+   $sm = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\\SpeakThat.lnk'; ^
+   $s2 = $ws.CreateShortcut($sm); ^
    $s2.TargetPath = '%TARGET_DIR%\\SpeakThat.exe'; ^
-   $s2.IconLocation = '%TARGET_DIR%\\assets\\icon.ico'; ^
+   $s2.WorkingDirectory = '%TARGET_DIR%'; ^
+   $s2.IconLocation = '%TARGET_DIR%\\assets\\icon.ico,0'; ^
    $s2.Description = 'SpeakThat - Windows Text Reader'; ^
    $s2.Save();"
 
 echo.
 echo [✓] Installation complete!
+echo     * Application installed to: %TARGET_DIR%
 echo     * Desktop Shortcut created: 'SpeakThat'
 echo     * Start Menu Shortcut created: 'SpeakThat'
 echo.
@@ -199,7 +207,19 @@ pause
 
     zip_size_mb = os.path.getsize(zip_output) / 1024 / 1024
     print(f"[✓] Release package created: {zip_output} ({zip_size_mb:.2f} MB)")
-    print("\n[✓] All build steps completed successfully!")
+
+    # 7. Compile Self-Extracting GUI Installer: dist/SpeakThat-Setup.exe
+    print("[*] Compiling Standalone Graphical Installer (SpeakThat-Setup.exe)...")
+    setup_cmd = [pyinstaller_exe, "SpeakThat-Setup.spec", "--noconfirm", "--clean"]
+    res_setup = subprocess.run(setup_cmd)
+    if res_setup.returncode == 0:
+        setup_exe = os.path.join(base_dir, "dist", "SpeakThat-Setup.exe")
+        if os.path.exists(setup_exe):
+            setup_size = os.path.getsize(setup_exe) / 1024 / 1024
+            print(f"[✓] Setup installer compiled: {setup_exe} ({setup_size:.2f} MB)")
+
+    print("\n[✓] All release build steps completed successfully!")
 
 if __name__ == "__main__":
     build()
+

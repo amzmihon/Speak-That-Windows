@@ -269,7 +269,7 @@ class TTSEngine:
                 time.sleep(0.1)
 
     def _playback_worker(self):
-        """Streams audio chunks to sounddevice output."""
+        """Streams audio chunks to sounddevice output with full stereo conversion and buffer drain."""
         while True:
             try:
                 item = self._audio_queue.get()
@@ -288,35 +288,72 @@ class TTSEngine:
                     self._audio_queue.task_done()
                     continue
 
-                # Apply volume scaling
-                scaled_audio = (audio * self.volume).astype(np.float32)
-                np.clip(scaled_audio, -1.0, 1.0, out=scaled_audio)
+                # 1. Volume normalization & scaling (guarantees clear, crisp speech)
+                peak = np.max(np.abs(audio))
+                if peak > 1e-4:
+                    norm_audio = (audio / peak) * 0.95 * max(0.1, min(1.0, float(self.volume)))
+                else:
+                    norm_audio = audio * float(self.volume)
+                norm_audio = np.clip(norm_audio, -1.0, 1.0).astype(np.float32)
+
+                # 2. Convert to 2-channel Stereo (critical: ensures both Left & Right headphone/speaker channels play)
+                stereo_audio = np.column_stack([norm_audio, norm_audio]).astype(np.float32)
 
                 self._notify_status("Speaking")
                 self._notify_sentence(sentence)
 
-                # Play via sounddevice stream with pause & stop responsiveness
+                # 3. Stream playback via callback with pause, resume, and DAC drain protection
+                curr_frame = 0
+                total_frames = len(stereo_audio)
+
+                def audio_callback(outdata, frames, time_info, status):
+                    nonlocal curr_frame
+                    if self._stop_event.is_set():
+                        outdata.fill(0)
+                        raise sd.CallbackStop
+                    if not self._pause_event.is_set():
+                        outdata.fill(0)
+                        return
+
+                    remaining = total_frames - curr_frame
+                    if remaining <= 0:
+                        outdata.fill(0)
+                        raise sd.CallbackStop
+
+                    valid = min(frames, remaining)
+                    outdata[:valid] = stereo_audio[curr_frame : curr_frame + valid]
+                    if valid < frames:
+                        outdata[valid:].fill(0)
+                        curr_frame += valid
+                        raise sd.CallbackStop
+                    curr_frame += valid
+
                 try:
-                    with sd.OutputStream(samplerate=SAMPLE_RATE, channels=1, dtype='float32') as stream:
-                        chunk_size = 2400  # 100ms slices for responsive pause/stop
-                        idx = 0
-                        total_samples = len(scaled_audio)
-
-                        while idx < total_samples and not self._stop_event.is_set():
-                            # Handle Pause
-                            while not self._pause_event.is_set() and not self._stop_event.is_set():
-                                time.sleep(0.04)
-
-                            if self._stop_event.is_set():
+                    with sd.OutputStream(
+                        samplerate=SAMPLE_RATE,
+                        channels=2,
+                        dtype='float32',
+                        callback=audio_callback,
+                        blocksize=1024,
+                    ) as stream:
+                        while stream.active and not self._stop_event.is_set():
+                            time.sleep(0.02)
+                        # Grace period (80ms) for hardware DAC buffer to drain so ending syllables are never cut
+                        if not self._stop_event.is_set():
+                            time.sleep(0.08)
+                except Exception as stream_err:
+                    print(f"[TTSEngine] Callback stream error: {stream_err}, falling back to sd.play()...")
+                    try:
+                        sd.play(stereo_audio, samplerate=SAMPLE_RATE)
+                        while sd.get_stream().active and not self._stop_event.is_set():
+                            if not self._pause_event.is_set():
+                                sd.stop()
                                 break
-
-                            end = min(idx + chunk_size, total_samples)
-                            slice_data = scaled_audio[idx:end]
-                            stream.write(slice_data)
-                            idx = end
-
-                except Exception as e:
-                    print(f"[TTSEngine] Playback error: {e}")
+                            time.sleep(0.04)
+                        if self._stop_event.is_set():
+                            sd.stop()
+                    except Exception as e:
+                        print(f"[TTSEngine] Fallback playback error: {e}")
 
                 self._audio_queue.task_done()
             except Exception as e:
