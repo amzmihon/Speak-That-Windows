@@ -34,6 +34,7 @@ block_cipher = None
 ctk_datas = collect_data_files('customtkinter')
 misaki_datas = collect_data_files('misaki')
 spacy_datas = collect_data_files('spacy')
+thinc_datas = collect_data_files('thinc')
 en_datas = collect_data_files('en_core_web_sm')
 espeak_datas = collect_data_files('espeakng_loader')
 espeak_binaries = collect_dynamic_libs('espeakng_loader')
@@ -43,10 +44,30 @@ ph_datas = collect_data_files('phonemizer')
 onnx_binaries = collect_dynamic_libs('onnxruntime')
 sd_binaries = collect_dynamic_libs('sounddevice')
 
-datas = [
+raw_datas = [
     ('assets', 'assets'),
     ('speak_that/model', 'speak_that/model'),
-] + ctk_datas + misaki_datas + spacy_datas + en_datas + espeak_datas + lt_datas + ph_datas
+] + ctk_datas + misaki_datas + spacy_datas + thinc_datas + en_datas + espeak_datas + lt_datas + ph_datas
+
+# Filter out dead C/C++ source code, Cython headers, and non-English dictionaries
+dead_exts = ('.cpp', '.h', '.hpp', '.c', '.pyx', '.pxd', '.pyi', '.dylib', '.ds_store')
+datas = []
+for src, dst in raw_datas:
+    src_lower = src.lower().replace('\\\\', '/')
+    filename = src_lower.split('/')[-1]
+    
+    # 1. Skip Cython C/C++ source code leftovers (spacy alone bundles ~75MB of .cpp files)
+    if any(src_lower.endswith(ext) for ext in dead_exts):
+        continue
+    # 2. Skip non-English dictionaries in espeakng_loader (ru_dict is 8.14MB, cmn_dict is 1.49MB, etc.)
+    if 'espeak-ng-data' in src_lower and '_dict' in filename:
+        if not (filename.startswith('en') or filename.startswith('gmw')):
+            continue
+    # 3. Skip unit tests and doc trees
+    if any(sub in src_lower for sub in ['/tests/', '/test/']):
+        continue
+        
+    datas.append((src, dst))
 
 binaries = onnx_binaries + sd_binaries + espeak_binaries
 
@@ -85,7 +106,10 @@ a = Analysis(
     hookspath=[],
     hooksconfig={{}},
     runtime_hooks=[],
-    excludes=['matplotlib', 'scipy', 'torch', 'torchaudio', 'torchvision', 'pandas', 'IPython', 'jupyter'],
+    excludes=[
+        'matplotlib', 'scipy', 'torch', 'torchaudio', 'torchvision', 'pandas', 'IPython', 'jupyter',
+        'hf_xet', 'pytest', 'unittest',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -150,7 +174,37 @@ coll = COLLECT(
 
     print(f"[+] Application successfully compiled to: {dist_dir}")
 
-    # 4. Copy essential companion files into dist/SpeakThat
+    # 4. Prune dead C/C++ source files, test caches, and non-English dicts from compiled distribution
+    print("[*] Optimizing compiled distribution (pruning dead source files & unneeded dicts)...")
+    pruned_count = 0
+    pruned_bytes = 0
+    dead_endings = ('.cpp', '.h', '.hpp', '.c', '.pyx', '.pxd', '.pyi', '.dylib', '.ds_store', '.pdb')
+    for root, dirs, files in os.walk(dist_dir):
+        for f in files:
+            f_lower = f.lower()
+            fp = os.path.join(root, f)
+            should_remove = False
+
+            # Remove leftover C/C++ source code
+            if any(f_lower.endswith(ext) for ext in dead_endings):
+                should_remove = True
+            # Remove non-English dictionaries from espeak-ng-data (e.g., ru_dict is 8.1MB, cmn_dict is 1.5MB)
+            elif 'espeak-ng-data' in root.lower() and '_dict' in f_lower:
+                if not (f_lower.startswith('en') or f_lower.startswith('gmw')):
+                    should_remove = True
+
+            if should_remove:
+                try:
+                    fsize = os.path.getsize(fp)
+                    os.remove(fp)
+                    pruned_count += 1
+                    pruned_bytes += fsize
+                except Exception:
+                    pass
+
+    print(f"[✓] Optimization complete: Pruned {pruned_count} files ({pruned_bytes / 1024 / 1024:.2f} MB saved)!")
+
+    # 5. Copy essential companion files into dist/SpeakThat
     for fname in ["config.json", "README.md", "assets"]:
         fpath = os.path.join(base_dir, fname)
         if os.path.exists(fpath):
@@ -162,7 +216,7 @@ coll = COLLECT(
             else:
                 shutil.copy(fpath, os.path.join(dist_dir, fname))
 
-    # 5. Create one-click installer script: dist/SpeakThat/install.bat
+    # 6. Create one-click installer script: dist/SpeakThat/install.bat
     install_bat_content = """@echo off
 title SpeakThat Windows Installer
 cd /d "%~dp0"
@@ -212,10 +266,10 @@ pause
     with open(os.path.join(dist_dir, "Install.bat"), "w", encoding="utf-8") as f:
         f.write(install_bat_content)
 
-    # 6. Create clean portable ZIP package: dist/SpeakThat-v1.2-Windows-x64.zip
+    # 7. Create clean portable ZIP package: dist/SpeakThat-v1.2-Windows-x64.zip
     zip_output = os.path.join(base_dir, "dist", "SpeakThat-v1.2-Windows-x64.zip")
-    print(f"[*] Packaging standalone ZIP release: {zip_output}...")
-    with zipfile.ZipFile(zip_output, "w", zipfile.ZIP_DEFLATED) as zipf:
+    print(f"[*] Packaging standalone ZIP release (max compression): {zip_output}...")
+    with zipfile.ZipFile(zip_output, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zipf:
         for root, dirs, files in os.walk(dist_dir):
             for file in files:
                 abs_path = os.path.join(root, file)
@@ -225,7 +279,7 @@ pause
     zip_size_mb = os.path.getsize(zip_output) / 1024 / 1024
     print(f"[✓] Release package created: {zip_output} ({zip_size_mb:.2f} MB)")
 
-    # 7. Compile Self-Extracting GUI Installer: dist/SpeakThat-Setup.exe
+    # 8. Compile Self-Extracting GUI Installer: dist/SpeakThat-Setup.exe
     print("[*] Compiling Standalone Graphical Installer (SpeakThat-Setup.exe)...")
     setup_cmd = [pyinstaller_exe, "SpeakThat-Setup.spec", "--noconfirm", "--clean"]
     res_setup = subprocess.run(setup_cmd)
