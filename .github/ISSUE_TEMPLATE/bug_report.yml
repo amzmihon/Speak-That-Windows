@@ -1,0 +1,59 @@
+name: 🐛 Bug Report
+description: Create a report to help us improve SpeakThat
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue! Please check existing issues first to avoid duplicates.
+  - type: input
+    id: version
+    attributes:
+      label: SpeakThat Version
+      description: What version of SpeakThat are you running? (e.g. v1.2.0, portable, installer, or running from source)
+      placeholder: v1.2.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows 11 (23H2 or newer)
+        - Windows 11 (22H2 / 21H2)
+        - Windows 10 (64-bit)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the Bug
+      description: A clear and concise description of what the bug is.
+      placeholder: When I press Ctrl+Shift+R while highlighting text in...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Step-by-step instructions to reproduce the issue.
+      placeholder: |
+        1. Highlight text in '...'
+        2. Press 'Ctrl+Shift+R'
+        3. See error or silence
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console or Error Logs
+      description: Please copy and paste any terminal output or error messages if available.
+      render: shell
