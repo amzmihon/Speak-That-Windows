@@ -151,10 +151,16 @@ coll = COLLECT(
     print(f"[+] Application successfully compiled to: {dist_dir}")
 
     # 4. Copy essential companion files into dist/SpeakThat
-    for fname in ["config.json", "README.md"]:
+    for fname in ["config.json", "README.md", "assets"]:
         fpath = os.path.join(base_dir, fname)
         if os.path.exists(fpath):
-            shutil.copy(fpath, os.path.join(dist_dir, fname))
+            if os.path.isdir(fpath):
+                dest_dir = os.path.join(dist_dir, fname)
+                if os.path.exists(dest_dir):
+                    shutil.rmtree(dest_dir)
+                shutil.copytree(fpath, dest_dir)
+            else:
+                shutil.copy(fpath, os.path.join(dist_dir, fname))
 
     # 5. Create one-click installer script: dist/SpeakThat/install.bat
     install_bat_content = """@echo off

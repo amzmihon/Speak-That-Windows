@@ -129,6 +129,10 @@ def install():
 
             exe_path = os.path.join(target_dir, "SpeakThat.exe")
             ico_path = os.path.join(target_dir, "assets", "icon.ico")
+            if not os.path.exists(ico_path):
+                ico_path = os.path.join(target_dir, "_internal", "assets", "icon.ico")
+            if not os.path.exists(ico_path):
+                ico_path = f"{exe_path},0"
 
             # 3. Create Desktop & Start Menu Shortcuts via PowerShell
             lbl_status.configure(text="Creating desktop & start menu shortcuts...")
