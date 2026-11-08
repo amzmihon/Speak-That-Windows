@@ -14,6 +14,7 @@ import math
 import time
 import ctypes
 import threading
+import webbrowser
 import tkinter as tk
 import customtkinter as ctk
 from PIL import Image
@@ -285,6 +286,8 @@ class MainWindow(ctk.CTk):
 
         # Icons & assets
         self._logo_image = None
+        self._github_icon = None
+        self._web_icon = None
         self._set_window_icon()
         self._is_alive = True
 
@@ -380,6 +383,22 @@ class MainWindow(ctk.CTk):
             except Exception:
                 self._logo_image = None
 
+        gh_path = os.path.join(base_dir, "assets", "github_icon.png")
+        if os.path.exists(gh_path):
+            try:
+                gh_img = Image.open(gh_path)
+                self._github_icon = ctk.CTkImage(light_image=gh_img, dark_image=gh_img, size=(14, 14))
+            except Exception:
+                self._github_icon = None
+
+        wb_path = os.path.join(base_dir, "assets", "web_icon.png")
+        if os.path.exists(wb_path):
+            try:
+                wb_img = Image.open(wb_path)
+                self._web_icon = ctk.CTkImage(light_image=wb_img, dark_image=wb_img, size=(14, 14))
+            except Exception:
+                self._web_icon = None
+
     def _build_layout(self):
         # Configure root grid: Column 0 = Rail (210px), Column 1 = Stage (expand)
         self.grid_rowconfigure(0, weight=1)
@@ -467,6 +486,44 @@ class MainWindow(ctk.CTk):
         # --- Rail Bottom Status Capsule ---
         rail_bottom = ctk.CTkFrame(self.rail, fg_color="transparent")
         rail_bottom.pack(side="bottom", fill="x", padx=12, pady=14)
+
+        # Quick Resource Links: Website & GitHub
+        links_row = ctk.CTkFrame(rail_bottom, fg_color="transparent")
+        links_row.pack(fill="x", pady=(0, 10))
+
+        btn_web = ctk.CTkButton(
+            links_row,
+            image=self._web_icon,
+            text=" Website",
+            compound="left",
+            font=("Segoe UI", 9, "bold"),
+            height=28,
+            corner_radius=8,
+            fg_color="#151C2C",
+            hover_color="#2D3A54",
+            text_color="#CBD5E1",
+            border_width=1,
+            border_color="#1F283B",
+            command=lambda: webbrowser.open("https://amzmihon.com/Speak-That-Windows")
+        )
+        btn_web.pack(side="left", fill="x", expand=True, padx=(0, 3))
+
+        btn_gh = ctk.CTkButton(
+            links_row,
+            image=self._github_icon,
+            text=" GitHub",
+            compound="left",
+            font=("Segoe UI", 9, "bold"),
+            height=28,
+            corner_radius=8,
+            fg_color="#151C2C",
+            hover_color="#2D3A54",
+            text_color="#CBD5E1",
+            border_width=1,
+            border_color="#1F283B",
+            command=lambda: webbrowser.open("https://github.com/amzmihon/Speak-That-Windows")
+        )
+        btn_gh.pack(side="left", fill="x", expand=True, padx=(3, 0))
 
         ctk.CTkFrame(rail_bottom, height=1, fg_color="#1F283B").pack(fill="x", pady=(0, 10))
 
@@ -1585,6 +1642,65 @@ class MainWindow(ctk.CTk):
             text_color="#64748B"
         )
         self.bench_status_lbl.pack(anchor="w")
+
+        # --- 3. Official Project Links & Documentation Card ---
+        links_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        links_card.pack(fill="x", pady=(10, 0))
+
+        lc_inner = ctk.CTkFrame(links_card, fg_color="transparent")
+        lc_inner.pack(fill="x", padx=16, pady=10)
+
+        ctk.CTkLabel(
+            lc_inner,
+            text="OFFICIAL PROJECT LINKS & DOCUMENTATION",
+            font=("Segoe UI", 9, "bold"),
+            text_color="#818CF8"
+        ).pack(anchor="w", pady=(0, 6))
+
+        l_row = ctk.CTkFrame(lc_inner, fg_color="transparent")
+        l_row.pack(fill="x")
+
+        # Landing Page Link Card
+        c_web = ctk.CTkFrame(l_row, fg_color="#0F1420", corner_radius=10, border_width=1, border_color="#1F283B")
+        c_web.pack(side="left", fill="both", expand=True, padx=(0, 4))
+
+        c_web_inner = ctk.CTkFrame(c_web, fg_color="transparent")
+        c_web_inner.pack(fill="x", padx=10, pady=8)
+
+        ctk.CTkLabel(c_web_inner, image=self._web_icon, text="  App Landing Page", compound="left", font=("Segoe UI", 10, "bold"), text_color="#F8FAFC").pack(anchor="w")
+        ctk.CTkLabel(c_web_inner, text="amzmihon.com/Speak-That-Windows", font=("Segoe UI", 8), text_color="#64748B").pack(anchor="w", pady=(1, 6))
+        ctk.CTkButton(
+            c_web_inner,
+            text="Visit Webpage ↗",
+            font=("Segoe UI", 9, "bold"),
+            height=24,
+            corner_radius=6,
+            fg_color="#6366F1",
+            hover_color="#4F46E5",
+            command=lambda: webbrowser.open("https://amzmihon.com/Speak-That-Windows")
+        ).pack(anchor="w")
+
+        # GitHub Repo Link Card
+        c_gh = ctk.CTkFrame(l_row, fg_color="#0F1420", corner_radius=10, border_width=1, border_color="#1F283B")
+        c_gh.pack(side="left", fill="both", expand=True, padx=(4, 0))
+
+        c_gh_inner = ctk.CTkFrame(c_gh, fg_color="transparent")
+        c_gh_inner.pack(fill="x", padx=10, pady=8)
+
+        ctk.CTkLabel(c_gh_inner, image=self._github_icon, text="  GitHub Repository", compound="left", font=("Segoe UI", 10, "bold"), text_color="#F8FAFC").pack(anchor="w")
+        ctk.CTkLabel(c_gh_inner, text="github.com/amzmihon/Speak-That-Windows", font=("Segoe UI", 8), text_color="#64748B").pack(anchor="w", pady=(1, 6))
+        ctk.CTkButton(
+            c_gh_inner,
+            text="View on GitHub ↗",
+            font=("Segoe UI", 9, "bold"),
+            height=24,
+            corner_radius=6,
+            fg_color="#1E293B",
+            hover_color="#334155",
+            border_width=1,
+            border_color="#334155",
+            command=lambda: webbrowser.open("https://github.com/amzmihon/Speak-That-Windows")
+        ).pack(anchor="w")
 
         return container
 

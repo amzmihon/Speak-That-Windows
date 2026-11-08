@@ -1,5 +1,13 @@
 # 🗣️ SpeakThat Windows
 
+[![Landing Page](https://img.shields.io/badge/Website-amzmihon.com-6366F1?style=flat-square&logo=google-chrome&logoColor=white)](https://amzmihon.com/Speak-That-Windows)
+[![GitHub](https://img.shields.io/badge/GitHub-amzmihon%2FSpeak--That--Windows-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/amzmihon/Speak-That-Windows)
+[![Release](https://img.shields.io/badge/Release-v1.2-10B981?style=flat-square)](https://github.com/amzmihon/Speak-That-Windows/releases)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20x64-0078D4?style=flat-square&logo=windows&logoColor=white)](https://amzmihon.com/Speak-That-Windows)
+
+🌐 **Official Website**: [https://amzmihon.com/Speak-That-Windows](https://amzmihon.com/Speak-That-Windows)  
+🐙 **Source Code**: [https://github.com/amzmihon/Speak-That-Windows](https://github.com/amzmihon/Speak-That-Windows)
+
 **SpeakThat** is a modern, ultra-fast Windows Text Reader desktop application powered by **Paradee 8M ONNX TTS** (distilled from Kokoro-82M). 
 
 Whenever you highlight any text across any Windows application (browser, PDF reader, Word document, IDE, chat app) and press **`Ctrl + Shift + R`**, SpeakThat instantly captures the selected text and reads it aloud with natural, high-fidelity human speech.

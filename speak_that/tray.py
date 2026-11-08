@@ -2,6 +2,7 @@
 
 import os
 import threading
+import webbrowser
 from PIL import Image
 import pystray
 from pystray import MenuItem as item, Menu
@@ -104,6 +105,9 @@ class TrayManager:
             item("Voice", Menu(*voice_items)),
             item("Speed", Menu(*speed_items)),
             item("Pop-up Style", Menu(*hud_items)),
+            Menu.SEPARATOR,
+            item("Visit Website (Landing Page)", lambda icon, it: webbrowser.open("https://amzmihon.com/Speak-That-Windows")),
+            item("GitHub Repository", lambda icon, it: webbrowser.open("https://github.com/amzmihon/Speak-That-Windows")),
             Menu.SEPARATOR,
             item("Exit SpeakThat", lambda icon, it: self._handle_exit()),
         )
