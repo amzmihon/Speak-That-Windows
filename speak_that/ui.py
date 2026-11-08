@@ -1008,7 +1008,84 @@ class MainWindow(ctk.CTk):
             else:
                 ctk.CTkLabel(p2, text=k, font=("Segoe UI", 9, "bold"), fg_color="#3B1219", text_color="#FECACA", corner_radius=4, width=38, height=20).pack(side="left")
 
-        # --- 3. Behavior Toggles Card ---
+        # --- 3. Floating Pop-up Widget Style Card ---
+        hud_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        hud_card.pack(fill="x", pady=(0, 8))
+
+        hc_inner = ctk.CTkFrame(hud_card, fg_color="transparent")
+        hc_inner.pack(fill="x", padx=16, pady=10)
+
+        hc_top = ctk.CTkFrame(hc_inner, fg_color="transparent")
+        hc_top.pack(fill="x")
+
+        ctk.CTkLabel(
+            hc_top,
+            text="FLOATING POP-UP WIDGET STYLE & DISPLAY",
+            font=("Segoe UI", 9, "bold"),
+            text_color="#818CF8"
+        ).pack(side="left")
+
+        # Master enable/disable switch
+        self.sw_floating_hud = ctk.CTkSwitch(
+            hc_top,
+            text="Enable Pop-up",
+            font=("Segoe UI", 9, "bold"),
+            progress_color="#6366F1",
+            command=self._on_hud_switch_toggle
+        )
+        self.sw_floating_hud.pack(side="right")
+
+        ctk.CTkLabel(
+            hc_inner,
+            text="Select visual size and layout while speaking, or choose 'No Pop-up' for pure keyboard shortcut reading.",
+            font=("Segoe UI", 9),
+            text_color="#94A3B8"
+        ).pack(anchor="w", pady=(1, 8))
+
+        # Styles row: 4 option buttons + preview button
+        styles_row = ctk.CTkFrame(hc_inner, fg_color="transparent")
+        styles_row.pack(fill="x")
+
+        self.hud_styles_data = [
+            ("default", "Default (440×74)"),
+            ("small", "Small (310×54)"),
+            ("tiny", "Tiny (154×46)"),
+            ("none", "No Pop-up"),
+        ]
+
+        self.hud_style_buttons = {}
+        for s_key, s_title in self.hud_styles_data:
+            btn = ctk.CTkButton(
+                styles_row,
+                text=s_title,
+                height=28,
+                corner_radius=10,
+                font=("Segoe UI", 9, "bold"),
+                fg_color="#1A2234",
+                hover_color="#2D3A54",
+                text_color="#CBD5E1",
+                command=lambda sk=s_key: self._apply_hud_style(sk)
+            )
+            btn.pack(side="left", padx=(0, 6))
+            self.hud_style_buttons[s_key] = btn
+
+        # Preview Button
+        self.btn_preview_hud = ctk.CTkButton(
+            styles_row,
+            text="✨ Preview Pop-up",
+            height=28,
+            corner_radius=10,
+            font=("Segoe UI", 9, "bold"),
+            fg_color="#1E1B4B",
+            hover_color="#312E81",
+            text_color="#A5B4FC",
+            border_width=1,
+            border_color="#4338CA",
+            command=self._on_preview_hud_click
+        )
+        self.btn_preview_hud.pack(side="right")
+
+        # --- 4. Automation & Clipboard Behavior Card ---
         pref_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
         pref_card.pack(fill="x", pady=(0, 0))
 
@@ -1047,17 +1124,7 @@ class MainWindow(ctk.CTk):
         )
         self.sw_fallback_clip.grid(row=0, column=1, sticky="w", pady=4)
 
-        # Switch 3: Floating Dynamic Island HUD
-        self.sw_floating_hud = ctk.CTkSwitch(
-            switches_grid,
-            text="Show Floating Glass Pop-up HUD",
-            font=("Segoe UI", 10, "bold"),
-            progress_color="#6366F1",
-            command=self._on_pref_changed
-        )
-        self.sw_floating_hud.grid(row=1, column=0, sticky="w", pady=4, padx=(0, 10))
-
-        # Switch 4: Minimize to tray on close
+        # Switch 3: Minimize to tray on close
         self.sw_min_to_tray = ctk.CTkSwitch(
             switches_grid,
             text="Minimize to System Tray on Close (X)",
@@ -1065,7 +1132,7 @@ class MainWindow(ctk.CTk):
             progress_color="#6366F1",
             command=self._on_pref_changed
         )
-        self.sw_min_to_tray.grid(row=1, column=1, sticky="w", pady=4)
+        self.sw_min_to_tray.grid(row=1, column=0, sticky="w", pady=4, padx=(0, 10))
 
         return container
 
@@ -1083,10 +1150,49 @@ class MainWindow(ctk.CTk):
             elif pw <= self.max_w and ph <= self.max_h:
                 btn.configure(fg_color="#1A2234", hover_color="#2D3A54")
 
+    def _apply_hud_style(self, style_key):
+        """Apply user-selected pop-up style ('default', 'small', 'tiny', 'none')."""
+        is_enabled = (style_key != "none")
+        self.config.set("hud_style", style_key)
+        self.config.set("show_floating_hud", is_enabled)
+
+        if is_enabled:
+            self.sw_floating_hud.select()
+        else:
+            self.sw_floating_hud.deselect()
+
+        for sk, btn in getattr(self, "hud_style_buttons", {}).items():
+            if sk == style_key:
+                btn.configure(fg_color="#6366F1", hover_color="#4F46E5", text_color="#FFFFFF")
+            else:
+                btn.configure(fg_color="#1A2234", hover_color="#2D3A54", text_color="#CBD5E1")
+
+        if hasattr(self, "on_hud_style_change") and self.on_hud_style_change:
+            self.on_hud_style_change(style_key, enabled=is_enabled)
+        elif hasattr(self, "hud") and self.hud:
+            self.hud.set_style(style_key, enabled=is_enabled)
+
+    def _on_hud_switch_toggle(self):
+        """Toggle master pop-up switch on/off."""
+        enabled = bool(self.sw_floating_hud.get())
+        if enabled:
+            cur_s = self.config.get("hud_style", "default")
+            if cur_s == "none":
+                cur_s = "default"
+            self._apply_hud_style(cur_s)
+        else:
+            self._apply_hud_style("none")
+
+    def _on_preview_hud_click(self):
+        """Preview the currently selected pop-up widget style on screen for 4 seconds."""
+        cur_s = self.config.get("hud_style", "default")
+        target_s = cur_s if cur_s != "none" else "default"
+        if hasattr(self, "hud") and self.hud:
+            self.hud.preview(target_s)
+
     def _on_pref_changed(self):
         self.config.set("restore_clipboard", bool(self.sw_restore_clip.get()))
         self.config.set("fallback_to_clipboard", bool(self.sw_fallback_clip.get()))
-        self.config.set("show_floating_hud", bool(self.sw_floating_hud.get()))
         self.config.set("minimize_to_tray_on_close", bool(self.sw_min_to_tray.get()))
 
     # =========================================================================
@@ -1255,10 +1361,23 @@ class MainWindow(ctk.CTk):
         else:
             self.sw_fallback_clip.deselect()
 
-        if self.config.get("show_floating_hud", True):
-            self.sw_floating_hud.select()
-        else:
-            self.sw_floating_hud.deselect()
+        # 4. Floating Pop-up Widget State
+        cur_hud_style = self.config.get("hud_style", "default")
+        hud_enabled = self.config.get("show_floating_hud", True)
+        if not hud_enabled:
+            cur_hud_style = "none"
+
+        if hasattr(self, "sw_floating_hud"):
+            if hud_enabled and cur_hud_style != "none":
+                self.sw_floating_hud.select()
+            else:
+                self.sw_floating_hud.deselect()
+
+        for sk, btn in getattr(self, "hud_style_buttons", {}).items():
+            if sk == cur_hud_style:
+                btn.configure(fg_color="#6366F1", hover_color="#4F46E5", text_color="#FFFFFF")
+            else:
+                btn.configure(fg_color="#1A2234", hover_color="#2D3A54", text_color="#CBD5E1")
 
         if self.config.get("minimize_to_tray_on_close", True):
             self.sw_min_to_tray.select()

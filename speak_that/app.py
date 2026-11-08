@@ -56,11 +56,17 @@ class SpeakThatApp:
         )
 
         # 4. Floating Mini-HUD Bar
+        hud_style = self.config.get("hud_style", "default")
+        hud_enabled = self.config.get("show_floating_hud", True) and (hud_style != "none")
         self.hud = FloatingHUD(
             master=self.window,
             on_pause_toggle=self.toggle_pause,
-            on_stop=self.stop_reading
+            on_stop=self.stop_reading,
+            style=hud_style,
+            enabled=hud_enabled
         )
+        self.window.hud = self.hud
+        self.window.on_hud_style_change = self.on_hud_style_change
 
         # 5. System Tray Manager
         self.tray = TrayManager(
@@ -71,6 +77,7 @@ class SpeakThatApp:
             on_exit=self.shutdown,
             on_voice_change=self.on_voice_change_tray,
             on_speed_change=self.on_speed_change_tray,
+            on_hud_style_change=self.on_hud_style_change,
         )
 
         # 6. Global Hotkey Manager
@@ -172,7 +179,9 @@ class SpeakThatApp:
             print(f"[Reader] Speaking ({len(text)} chars): \"{preview}\"", flush=True)
 
             # Show HUD with warming up state or regular reading state
-            if self.config.get("show_floating_hud", True):
+            hud_style = self.config.get("hud_style", "default")
+            show_hud = self.config.get("show_floating_hud", True) and (hud_style != "none")
+            if show_hud:
                 first_line = text.strip().split("\n")[0]
                 if not self.engine.is_ready():
                     self.window.after(0, lambda: self.hud.show_warming_up(first_line))
@@ -184,10 +193,13 @@ class SpeakThatApp:
         else:
             print("[Reader] No text selected or on clipboard.", flush=True)
             self.window.update_status("Ready")
-            def _flash_no_text():
-                self.hud.show("No text selected. Highlight text and press Ctrl+Shift+R.")
-                self.window.after(2500, self.hud.hide)
-            self.window.after(0, _flash_no_text)
+            hud_style = self.config.get("hud_style", "default")
+            show_hud = self.config.get("show_floating_hud", True) and (hud_style != "none")
+            if show_hud:
+                def _flash_no_text():
+                    self.hud.show("No text selected. Highlight text and press Ctrl+Shift+R.")
+                    self.window.after(2500, self.hud.hide)
+                self.window.after(0, _flash_no_text)
 
     def stop_reading(self):
         """Action invoked when shortcut Ctrl+Shift+X or Stop button is pressed."""
@@ -209,15 +221,31 @@ class SpeakThatApp:
         self.engine.set_speed(speed_val)
         self.window._load_config_to_ui()
 
+    def on_hud_style_change(self, style_name, enabled=True):
+        """Update floating pop-up style across config, HUD window, and tray menu."""
+        is_enabled = (style_name != "none") and bool(enabled)
+        self.config.set("hud_style", style_name)
+        self.config.set("show_floating_hud", is_enabled)
+        if hasattr(self, "hud") and self.hud:
+            self.hud.set_style(style_name, enabled=is_enabled)
+        if hasattr(self, "tray") and self.tray:
+            self.tray.update_menu()
+        if hasattr(self, "window") and self.window:
+            self.window._load_config_to_ui()
+
     def _on_engine_status(self, status):
         self.window.update_status(status)
         self.tray.set_status(status)
-        if self.config.get("show_floating_hud", True):
+        hud_style = self.config.get("hud_style", "default")
+        show_hud = self.config.get("show_floating_hud", True) and (hud_style != "none")
+        if show_hud:
             self.window.after(0, lambda: self.hud.update_status(status))
 
     def _on_engine_sentence(self, sentence):
         self.window.update_sentence(sentence)
-        if self.config.get("show_floating_hud", True):
+        hud_style = self.config.get("hud_style", "default")
+        show_hud = self.config.get("show_floating_hud", True) and (hud_style != "none")
+        if show_hud:
             self.window.after(0, lambda: self.hud.update_sentence(sentence))
 
     def _on_engine_complete(self):

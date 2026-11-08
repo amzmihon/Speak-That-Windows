@@ -13,6 +13,7 @@ DEFAULT_CONFIG = {
     "restore_clipboard": False,
     "fallback_to_clipboard": True,
     "show_floating_hud": True,
+    "hud_style": "default",
     "minimize_to_tray_on_close": True,
     "start_minimized": False,
     "sound_feedback": True,

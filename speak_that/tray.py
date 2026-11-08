@@ -12,7 +12,7 @@ from .config import VOICE_NAMES
 class TrayManager:
     """Manages the Windows system tray notification icon and quick context menu."""
 
-    def __init__(self, config, on_read=None, on_stop=None, on_show_window=None, on_exit=None, on_voice_change=None, on_speed_change=None):
+    def __init__(self, config, on_read=None, on_stop=None, on_show_window=None, on_exit=None, on_voice_change=None, on_speed_change=None, on_hud_style_change=None):
         self.config = config
         self.on_read = on_read
         self.on_stop = on_stop
@@ -20,6 +20,7 @@ class TrayManager:
         self.on_exit = on_exit
         self.on_voice_change = on_voice_change
         self.on_speed_change = on_speed_change
+        self.on_hud_style_change = on_hud_style_change
 
         self.icon = None
         self._status_text = "Ready"
@@ -65,6 +66,30 @@ class TrayManager:
                 item(f"{spd:.1f}x", make_speed_handler(spd), checked=make_speed_checker(spd), radio=True)
             )
 
+        # Pop-up Widget Style submenu
+        hud_styles = [
+            ("default", "Default (Full 440×74)"),
+            ("small", "Small (Compact 310×54)"),
+            ("tiny", "Tiny (Minimalist 154×46)"),
+            ("none", "None (No Pop-up / Shortcut Only)"),
+        ]
+        hud_items = []
+        for s_key, s_lbl in hud_styles:
+            def make_hud_handler(sk):
+                return lambda icon, item: self._handle_hud_style_change(sk)
+
+            def make_hud_checker(sk):
+                def _check(item):
+                    cur_s = self.config.get("hud_style", "default")
+                    if not self.config.get("show_floating_hud", True):
+                        cur_s = "none"
+                    return cur_s == sk
+                return _check
+
+            hud_items.append(
+                item(s_lbl, make_hud_handler(s_key), checked=make_hud_checker(s_key), radio=True)
+            )
+
         return Menu(
             item(f"SpeakThat ({self._status_text})", lambda: None, enabled=False),
             Menu.SEPARATOR,
@@ -74,9 +99,18 @@ class TrayManager:
             Menu.SEPARATOR,
             item("Voice", Menu(*voice_items)),
             item("Speed", Menu(*speed_items)),
+            item("Pop-up Style", Menu(*hud_items)),
             Menu.SEPARATOR,
             item("Exit SpeakThat", lambda icon, it: self._handle_exit()),
         )
+
+    def _handle_hud_style_change(self, style_key):
+        is_enabled = (style_key != "none")
+        self.config.set("hud_style", style_key)
+        self.config.set("show_floating_hud", is_enabled)
+        if self.on_hud_style_change:
+            self.on_hud_style_change(style_key, enabled=is_enabled)
+        self.update_menu()
 
     def _handle_voice_change(self, voice_key):
         self.config.set("voice", voice_key)
