@@ -928,7 +928,12 @@ class MainWindow(ctk.CTk):
     # VIEW 2: VOICE PERSONAS (2x2 Grid, Budget: ~340px, fits with 0 scrollbars)
     # =========================================================================
     def _create_voices_view(self):
-        container = ctk.CTkFrame(self.view_container, fg_color="transparent")
+        container = ctk.CTkScrollableFrame(
+            self.view_container,
+            fg_color="transparent",
+            scrollbar_button_color="#222D42",
+            scrollbar_button_hover_color="#334155"
+        )
 
         # --- 1. 2x2 Grid of 4 Persona Cards ---
         ctk.CTkLabel(
@@ -1158,44 +1163,42 @@ class MainWindow(ctk.CTk):
     # VIEW 3: SHORTCUTS & BEHAVIOR (Window Sizing + Toggles, Budget: ~360px)
     # =========================================================================
     def _create_shortcuts_view(self):
-        container = ctk.CTkFrame(self.view_container, fg_color="transparent")
+        container = ctk.CTkScrollableFrame(
+            self.view_container,
+            fg_color="transparent",
+            scrollbar_button_color="#222D42",
+            scrollbar_button_hover_color="#334155"
+        )
 
         # --- 1. Window Sizing & Step Configuration Card ---
-        size_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
-        size_card.pack(fill="x", pady=(0, 8))
+        size_card = ctk.CTkFrame(container, corner_radius=14, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        size_card.pack(fill="x", pady=(0, 6))
 
         sz_inner = ctk.CTkFrame(size_card, fg_color="transparent")
-        sz_inner.pack(fill="x", padx=16, pady=10)
+        sz_inner.pack(fill="x", padx=14, pady=8)
 
-        sz_top = ctk.CTkFrame(sz_inner, fg_color="transparent")
-        sz_top.pack(fill="x")
+        sz_left = ctk.CTkFrame(sz_inner, fg_color="transparent")
+        sz_left.pack(side="left")
 
         ctk.CTkLabel(
-            sz_top,
+            sz_left,
             text="WINDOW DIMENSIONS & STEP SIZING",
             font=("Segoe UI", 9, "bold"),
             text_color="#818CF8"
-        ).pack(side="left")
+        ).pack(anchor="w")
 
         sw, sh = self.screen_res
         self.screen_info_lbl = ctk.CTkLabel(
-            sz_top,
+            sz_left,
             text=f"Screen: {sw}×{sh} • Max Step: {self.max_w}×{self.max_h}",
             font=("Segoe UI", 8),
             text_color="#64748B"
         )
-        self.screen_info_lbl.pack(side="right")
-
-        ctk.CTkLabel(
-            sz_inner,
-            text="Snaps in steps of 200px width and 100px height up to 1400×900 max based on available screen space.",
-            font=("Segoe UI", 9),
-            text_color="#94A3B8"
-        ).pack(anchor="w", pady=(1, 6))
+        self.screen_info_lbl.pack(anchor="w")
 
         # Size Presets Row
         presets_row = ctk.CTkFrame(sz_inner, fg_color="transparent")
-        presets_row.pack(fill="x")
+        presets_row.pack(side="right")
 
         self.size_presets = [
             (800, 580, "800×580 Compact"),
@@ -1209,9 +1212,9 @@ class MainWindow(ctk.CTk):
             btn = ctk.CTkButton(
                 presets_row,
                 text=lbl,
-                height=26,
-                corner_radius=10,
-                font=("Segoe UI", 9, "bold"),
+                height=24,
+                corner_radius=8,
+                font=("Segoe UI", 8, "bold"),
                 fg_color="#1A2234",
                 hover_color="#2D3A54",
                 command=lambda tw=w, th=h: self._apply_window_size(tw, th)
@@ -1219,15 +1222,15 @@ class MainWindow(ctk.CTk):
             # Disable if larger than max screen step allowance
             if w > self.max_w or h > self.max_h:
                 btn.configure(state="disabled", fg_color="#101520", text_color="#475569")
-            btn.pack(side="left", padx=(0, 6))
+            btn.pack(side="left", padx=(0, 4))
             self.size_btn_widgets[(w, h)] = btn
 
         # --- 2. System-Wide Hotkeys Card ---
-        hk_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
-        hk_card.pack(fill="x", pady=(0, 8))
+        hk_card = ctk.CTkFrame(container, corner_radius=14, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        hk_card.pack(fill="x", pady=(0, 6))
 
         hk_inner = ctk.CTkFrame(hk_card, fg_color="transparent")
-        hk_inner.pack(fill="x", padx=16, pady=10)
+        hk_inner.pack(fill="x", padx=14, pady=8)
 
         # Header row with title & Reset button
         hk_header_row = ctk.CTkFrame(hk_inner, fg_color="transparent")
@@ -1243,9 +1246,9 @@ class MainWindow(ctk.CTk):
         ctk.CTkButton(
             hk_header_row,
             text="↺ Reset to Defaults",
-            width=115,
-            height=24,
-            corner_radius=8,
+            width=110,
+            height=22,
+            corner_radius=6,
             font=("Segoe UI", 8, "bold"),
             fg_color="#1E293B",
             hover_color="#334155",
@@ -1255,25 +1258,18 @@ class MainWindow(ctk.CTk):
             command=self._on_reset_hotkeys
         ).pack(side="right")
 
-        ctk.CTkLabel(
-            hk_inner,
-            text="Press 'Change' to record any custom keyboard shortcut, or click a quick preset.",
-            font=("Segoe UI", 9),
-            text_color="#94A3B8"
-        ).pack(anchor="w", pady=(0, 8))
-
         # --- Row 1: Read Selection ---
-        r1_frame = ctk.CTkFrame(hk_inner, fg_color="#0F1420", corner_radius=10, border_width=1, border_color="#1F283B")
-        r1_frame.pack(fill="x", pady=(0, 6), padx=0)
+        r1_frame = ctk.CTkFrame(hk_inner, fg_color="#0F1420", corner_radius=8, border_width=1, border_color="#1F283B")
+        r1_frame.pack(fill="x", pady=(0, 3), padx=0)
 
         r1_inner = ctk.CTkFrame(r1_frame, fg_color="transparent")
-        r1_inner.pack(fill="x", padx=10, pady=8)
+        r1_inner.pack(fill="x", padx=10, pady=5)
 
         # Left: label + badge container
         r1_left = ctk.CTkFrame(r1_inner, fg_color="transparent")
         r1_left.pack(side="left")
 
-        ctk.CTkLabel(r1_left, text="Read Selection:", font=("Segoe UI", 10, "bold"), text_color="#F8FAFC").pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r1_left, text="Read Selection:", font=("Segoe UI", 9, "bold"), text_color="#F8FAFC").pack(side="left", padx=(0, 8))
         self.pref_read_badges_frame = ctk.CTkFrame(r1_left, fg_color="transparent")
         self.pref_read_badges_frame.pack(side="left")
 
@@ -1286,9 +1282,9 @@ class MainWindow(ctk.CTk):
             ctk.CTkButton(
                 r1_right,
                 text=p,
-                width=68,
-                height=22,
-                corner_radius=6,
+                width=64,
+                height=20,
+                corner_radius=5,
                 font=("Segoe UI", 8, "bold"),
                 fg_color="#1A2234",
                 hover_color="#2D3A54",
@@ -1301,28 +1297,28 @@ class MainWindow(ctk.CTk):
         ctk.CTkButton(
             r1_right,
             text="⌨ Change",
-            width=76,
-            height=24,
-            corner_radius=8,
-            font=("Segoe UI", 9, "bold"),
+            width=70,
+            height=22,
+            corner_radius=6,
+            font=("Segoe UI", 8, "bold"),
             fg_color="#6366F1",
             hover_color="#4F46E5",
             text_color="#FFFFFF",
             command=lambda: self._open_hotkey_recorder("Read")
-        ).pack(side="left", padx=(6, 0))
+        ).pack(side="left", padx=(4, 0))
 
         # --- Row 2: Stop Reading ---
-        r2_frame = ctk.CTkFrame(hk_inner, fg_color="#0F1420", corner_radius=10, border_width=1, border_color="#1F283B")
+        r2_frame = ctk.CTkFrame(hk_inner, fg_color="#0F1420", corner_radius=8, border_width=1, border_color="#1F283B")
         r2_frame.pack(fill="x", pady=(0, 0), padx=0)
 
         r2_inner = ctk.CTkFrame(r2_frame, fg_color="transparent")
-        r2_inner.pack(fill="x", padx=10, pady=8)
+        r2_inner.pack(fill="x", padx=10, pady=5)
 
         # Left: label + badge container
         r2_left = ctk.CTkFrame(r2_inner, fg_color="transparent")
         r2_left.pack(side="left")
 
-        ctk.CTkLabel(r2_left, text="Stop Speech:", font=("Segoe UI", 10, "bold"), text_color="#F8FAFC").pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r2_left, text="Stop Speech:", font=("Segoe UI", 9, "bold"), text_color="#F8FAFC").pack(side="left", padx=(0, 8))
         self.pref_stop_badges_frame = ctk.CTkFrame(r2_left, fg_color="transparent")
         self.pref_stop_badges_frame.pack(side="left")
 
@@ -1335,9 +1331,9 @@ class MainWindow(ctk.CTk):
             ctk.CTkButton(
                 r2_right,
                 text=p,
-                width=68,
-                height=22,
-                corner_radius=6,
+                width=64,
+                height=20,
+                corner_radius=5,
                 font=("Segoe UI", 8, "bold"),
                 fg_color="#1A2234",
                 hover_color="#2D3A54",
@@ -1350,25 +1346,25 @@ class MainWindow(ctk.CTk):
         ctk.CTkButton(
             r2_right,
             text="⌨ Change",
-            width=76,
-            height=24,
-            corner_radius=8,
-            font=("Segoe UI", 9, "bold"),
+            width=70,
+            height=22,
+            corner_radius=6,
+            font=("Segoe UI", 8, "bold"),
             fg_color="#EF4444",
             hover_color="#DC2626",
             text_color="#FFFFFF",
             command=lambda: self._open_hotkey_recorder("Stop")
-        ).pack(side="left", padx=(6, 0))
+        ).pack(side="left", padx=(4, 0))
 
         # --- 3. Floating Pop-up Widget Style Card ---
-        hud_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
-        hud_card.pack(fill="x", pady=(0, 8))
+        hud_card = ctk.CTkFrame(container, corner_radius=14, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        hud_card.pack(fill="x", pady=(0, 6))
 
         hc_inner = ctk.CTkFrame(hud_card, fg_color="transparent")
-        hc_inner.pack(fill="x", padx=16, pady=10)
+        hc_inner.pack(fill="x", padx=14, pady=8)
 
         hc_top = ctk.CTkFrame(hc_inner, fg_color="transparent")
-        hc_top.pack(fill="x")
+        hc_top.pack(fill="x", pady=(0, 4))
 
         ctk.CTkLabel(
             hc_top,
@@ -1387,13 +1383,6 @@ class MainWindow(ctk.CTk):
         )
         self.sw_floating_hud.pack(side="right")
 
-        ctk.CTkLabel(
-            hc_inner,
-            text="Select visual size and layout while speaking, or choose 'No Pop-up' for pure keyboard shortcut reading.",
-            font=("Segoe UI", 9),
-            text_color="#94A3B8"
-        ).pack(anchor="w", pady=(1, 8))
-
         # Styles row: 4 option buttons + preview button
         styles_row = ctk.CTkFrame(hc_inner, fg_color="transparent")
         styles_row.pack(fill="x")
@@ -1410,24 +1399,24 @@ class MainWindow(ctk.CTk):
             btn = ctk.CTkButton(
                 styles_row,
                 text=s_title,
-                height=28,
-                corner_radius=10,
-                font=("Segoe UI", 9, "bold"),
+                height=26,
+                corner_radius=8,
+                font=("Segoe UI", 8, "bold"),
                 fg_color="#1A2234",
                 hover_color="#2D3A54",
                 text_color="#CBD5E1",
                 command=lambda sk=s_key: self._apply_hud_style(sk)
             )
-            btn.pack(side="left", padx=(0, 6))
+            btn.pack(side="left", padx=(0, 4))
             self.hud_style_buttons[s_key] = btn
 
         # Preview Button
         self.btn_preview_hud = ctk.CTkButton(
             styles_row,
             text="✨ Preview Pop-up",
-            height=28,
-            corner_radius=10,
-            font=("Segoe UI", 9, "bold"),
+            height=26,
+            corner_radius=8,
+            font=("Segoe UI", 8, "bold"),
             fg_color="#1E1B4B",
             hover_color="#312E81",
             text_color="#A5B4FC",
@@ -1438,18 +1427,18 @@ class MainWindow(ctk.CTk):
         self.btn_preview_hud.pack(side="right")
 
         # --- 4. Automation & Clipboard Behavior Card ---
-        pref_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
+        pref_card = ctk.CTkFrame(container, corner_radius=14, fg_color="#151C2C", border_width=1, border_color="#222D42")
         pref_card.pack(fill="x", pady=(0, 0))
 
         pf_inner = ctk.CTkFrame(pref_card, fg_color="transparent")
-        pf_inner.pack(fill="x", padx=16, pady=10)
+        pf_inner.pack(fill="x", padx=14, pady=8)
 
         ctk.CTkLabel(
             pf_inner,
             text="AUTOMATION & CLIPBOARD BEHAVIOR",
             font=("Segoe UI", 9, "bold"),
             text_color="#818CF8"
-        ).pack(anchor="w", pady=(0, 8))
+        ).pack(anchor="w", pady=(0, 6))
 
         switches_grid = ctk.CTkFrame(pf_inner, fg_color="transparent")
         switches_grid.pack(fill="x")
@@ -1460,31 +1449,41 @@ class MainWindow(ctk.CTk):
         self.sw_restore_clip = ctk.CTkSwitch(
             switches_grid,
             text="Preserve Clipboard History",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 9, "bold"),
             progress_color="#6366F1",
             command=self._on_pref_changed
         )
-        self.sw_restore_clip.grid(row=0, column=0, sticky="w", pady=4, padx=(0, 10))
+        self.sw_restore_clip.grid(row=0, column=0, sticky="w", pady=3, padx=(0, 8))
 
         # Switch 2: Fallback to clipboard
         self.sw_fallback_clip = ctk.CTkSwitch(
             switches_grid,
             text="Clipboard Fallback on Empty Selection",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 9, "bold"),
             progress_color="#6366F1",
             command=self._on_pref_changed
         )
-        self.sw_fallback_clip.grid(row=0, column=1, sticky="w", pady=4)
+        self.sw_fallback_clip.grid(row=0, column=1, sticky="w", pady=3)
 
         # Switch 3: Minimize to tray on close
         self.sw_min_to_tray = ctk.CTkSwitch(
             switches_grid,
             text="Minimize to System Tray on Close (X)",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 9, "bold"),
             progress_color="#6366F1",
             command=self._on_pref_changed
         )
-        self.sw_min_to_tray.grid(row=1, column=0, sticky="w", pady=4, padx=(0, 10))
+        self.sw_min_to_tray.grid(row=1, column=0, sticky="w", pady=3, padx=(0, 8))
+
+        # Switch 4: Start minimized to tray on launch
+        self.sw_start_minimized = ctk.CTkSwitch(
+            switches_grid,
+            text="Start Minimized to System Tray",
+            font=("Segoe UI", 9, "bold"),
+            progress_color="#6366F1",
+            command=self._on_pref_changed
+        )
+        self.sw_start_minimized.grid(row=1, column=1, sticky="w", pady=3)
 
         return container
 
@@ -1546,12 +1545,19 @@ class MainWindow(ctk.CTk):
         self.config.set("restore_clipboard", bool(self.sw_restore_clip.get()))
         self.config.set("fallback_to_clipboard", bool(self.sw_fallback_clip.get()))
         self.config.set("minimize_to_tray_on_close", bool(self.sw_min_to_tray.get()))
+        if hasattr(self, "sw_start_minimized"):
+            self.config.set("start_minimized", bool(self.sw_start_minimized.get()))
 
     # =========================================================================
     # VIEW 4: MODEL & BENCHMARK (Budget: ~330px, fits with 0 scrollbars)
     # =========================================================================
     def _create_model_view(self):
-        container = ctk.CTkFrame(self.view_container, fg_color="transparent")
+        container = ctk.CTkScrollableFrame(
+            self.view_container,
+            fg_color="transparent",
+            scrollbar_button_color="#222D42",
+            scrollbar_button_hover_color="#334155"
+        )
 
         # --- 1. Technical Specs Card ---
         specs_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
@@ -1794,6 +1800,12 @@ class MainWindow(ctk.CTk):
             self.sw_min_to_tray.select()
         else:
             self.sw_min_to_tray.deselect()
+
+        if hasattr(self, "sw_start_minimized"):
+            if self.config.get("start_minimized", False):
+                self.sw_start_minimized.select()
+            else:
+                self.sw_start_minimized.deselect()
 
         # 5. Sizing preset button state
         cur_w = int(self.config.get("window_width", 1000))
