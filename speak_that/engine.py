@@ -1,6 +1,7 @@
 """Paradee Text-To-Speech Engine with Sentence Streaming and Async Audio Playback."""
 
 import os
+import sys
 import queue
 import re
 import threading
@@ -8,6 +9,62 @@ import time
 import numpy as np
 import sounddevice as sd
 from paradee import Paradee, SAMPLE_RATE, VOICES
+
+
+def patch_spacy_for_pyinstaller():
+    """Ensures Misaki and Spacy load bundled en_core_web_sm models offline in PyInstaller."""
+    try:
+        import spacy
+        import spacy.util
+
+        orig_is_pkg = spacy.util.is_package
+        def _safe_is_pkg(name):
+            if "en_core_web" in str(name):
+                return True
+            try:
+                return orig_is_pkg(name)
+            except Exception:
+                return True
+        spacy.util.is_package = _safe_is_pkg
+
+        try:
+            import en_core_web_sm
+            orig_spacy_load = spacy.load
+            def _safe_spacy_load(name, **kwargs):
+                if "en_core_web_sm" in str(name):
+                    return en_core_web_sm.load(**kwargs)
+                return orig_spacy_load(name, **kwargs)
+            spacy.load = _safe_spacy_load
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"[TTSEngine] Note on Spacy patch: {e}")
+
+
+def find_local_model_paths():
+    """Locate bundled Paradee ONNX weights across all possible installation layouts."""
+    candidates = []
+    # 1. Package directory
+    pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(pkg_dir, "model"))
+    # 2. PyInstaller _MEIPASS
+    if hasattr(sys, "_MEIPASS"):
+        candidates.append(os.path.join(sys._MEIPASS, "speak_that", "model"))
+        candidates.append(os.path.join(sys._MEIPASS, "model"))
+    # 3. Executable directory
+    exe_dir = os.path.dirname(sys.executable)
+    candidates.append(os.path.join(exe_dir, "_internal", "speak_that", "model"))
+    candidates.append(os.path.join(exe_dir, "speak_that", "model"))
+    candidates.append(os.path.join(exe_dir, "model"))
+    # 4. Working directory / project root
+    candidates.append(os.path.join(os.getcwd(), "speak_that", "model"))
+
+    for c in candidates:
+        m = os.path.join(c, "paradee_int8.onnx")
+        cfg = os.path.join(c, "config.json")
+        if os.path.exists(m) and os.path.exists(cfg):
+            return m, cfg
+    return None, None
 
 
 class TTSEngine:
@@ -21,6 +78,7 @@ class TTSEngine:
         # Paradee instance
         self.model = None
         self._is_ready = False
+        self._init_error = None
 
         # Queues & Threading
         self._text_queue = queue.Queue()
@@ -53,14 +111,9 @@ class TTSEngine:
         try:
             self._notify_status("Loading Paradee TTS model...")
 
-            # 1. Prefer local bundled model in package directory
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            local_model = os.path.join(base_dir, "model", "paradee_int8.onnx")
-            local_config = os.path.join(base_dir, "model", "config.json")
+            patch_spacy_for_pyinstaller()
 
-            model_path, config_path = None, None
-            if os.path.exists(local_model) and os.path.exists(local_config):
-                model_path, config_path = local_model, local_config
+            model_path, config_path = find_local_model_paths()
 
             # 2. Attempt offline load from HuggingFace cache if local bundle not present
             if not model_path or not config_path:
@@ -72,8 +125,10 @@ class TTSEngine:
                     model_path, config_path = None, None
 
             if model_path and config_path:
+                print(f"[TTSEngine] Initializing local Paradee model: {model_path}", flush=True)
                 self.model = Paradee(version="1.2", quantized=True, model_path=model_path, config_path=config_path)
             else:
+                print("[TTSEngine] Local model not found, falling back to HuggingFace Hub...", flush=True)
                 self.model = Paradee(version="1.2", quantized=True)
 
             # Pre-warm G2P for both American and British accents
@@ -81,12 +136,18 @@ class TTSEngine:
             self.model.g2p(british=True)
 
             # Run a tiny warmup inference
-            _ = self.model("Ready.", voice="bf_isabella", speed=1.0)
+            _ = self.model("Ready.", voice=self.voice, speed=1.0)
             self._is_ready = True
+            self._init_error = None
             self._notify_status("Ready")
+            print("[TTSEngine] Model initialized and fully ready.", flush=True)
         except Exception as e:
-            print(f"[TTSEngine] Initialization error: {e}")
-            self._notify_status(f"Error loading model: {e}")
+            import traceback
+            err_msg = f"Error loading model: {e}"
+            print(f"[TTSEngine] {err_msg}", flush=True)
+            traceback.print_exc()
+            self._init_error = str(e)
+            self._notify_status(err_msg)
 
     def is_ready(self):
         return self._is_ready
@@ -243,33 +304,43 @@ class TTSEngine:
                     self._text_queue.task_done()
                     continue
 
-                # Wait if model is still downloading/initializing
-                while not self._is_ready:
+                # Wait if model is still downloading/initializing with timeout
+                wait_ticks = 0
+                while not self._is_ready and not getattr(self, "_init_error", None):
                     if self._stop_event.is_set():
                         break
                     time.sleep(0.1)
+                    wait_ticks += 1
+                    if wait_ticks > 300:  # 30s timeout
+                        print("[TTSEngine] Model initialization timeout in synthesis worker!", flush=True)
+                        break
 
-                if self._stop_event.is_set():
+                if not self._is_ready or self._stop_event.is_set() or getattr(self, "_init_error", None):
+                    if getattr(self, "_init_error", None):
+                        print(f"[TTSEngine] Synthesis skipped due to model error: {self._init_error}", flush=True)
                     self._text_queue.task_done()
+                    self._notify_complete()
                     continue
 
                 # Generate speech with Paradee
                 try:
                     audio = self.model(sentence, speed=self.speed, voice=self.voice)
                 except Exception as e:
-                    print(f"[TTSEngine] Synthesis error for '{sentence[:20]}...': {e}")
+                    import traceback
+                    print(f"[TTSEngine] Synthesis error for '{sentence[:20]}...': {e}", flush=True)
+                    traceback.print_exc()
                     audio = np.zeros(0, dtype=np.float32)
 
-                if not self._stop_event.is_set():
+                if not self._stop_event.is_set() and len(audio) > 0:
                     self._audio_queue.put((sentence, audio))
 
                 self._text_queue.task_done()
             except Exception as e:
-                print(f"[TTSEngine] Synthesis worker error: {e}")
+                print(f"[TTSEngine] Synthesis worker error: {e}", flush=True)
                 time.sleep(0.1)
 
     def _playback_worker(self):
-        """Streams audio chunks to sounddevice output with full stereo conversion and buffer drain."""
+        """Streams audio chunks to sounddevice output with full stereo conversion and volume boost."""
         while True:
             try:
                 item = self._audio_queue.get()
@@ -288,7 +359,7 @@ class TTSEngine:
                     self._audio_queue.task_done()
                     continue
 
-                # 1. Volume normalization & scaling (guarantees clear, crisp speech)
+                # 1. Volume normalization & scaling (guarantees clear, audible speech)
                 peak = np.max(np.abs(audio))
                 if peak > 1e-4:
                     norm_audio = (audio / peak) * 0.95 * max(0.1, min(1.0, float(self.volume)))
@@ -302,60 +373,28 @@ class TTSEngine:
                 self._notify_status("Speaking")
                 self._notify_sentence(sentence)
 
-                # 3. Stream playback via callback with pause, resume, and DAC drain protection
-                curr_frame = 0
-                total_frames = len(stereo_audio)
-
-                def audio_callback(outdata, frames, time_info, status):
-                    nonlocal curr_frame
-                    if self._stop_event.is_set():
-                        outdata.fill(0)
-                        raise sd.CallbackStop
-                    if not self._pause_event.is_set():
-                        outdata.fill(0)
-                        return
-
-                    remaining = total_frames - curr_frame
-                    if remaining <= 0:
-                        outdata.fill(0)
-                        raise sd.CallbackStop
-
-                    valid = min(frames, remaining)
-                    outdata[:valid] = stereo_audio[curr_frame : curr_frame + valid]
-                    if valid < frames:
-                        outdata[valid:].fill(0)
-                        curr_frame += valid
-                        raise sd.CallbackStop
-                    curr_frame += valid
-
+                # 3. Native reliable sounddevice playback
                 try:
-                    with sd.OutputStream(
-                        samplerate=SAMPLE_RATE,
-                        channels=2,
-                        dtype='float32',
-                        callback=audio_callback,
-                        blocksize=1024,
-                    ) as stream:
-                        while stream.active and not self._stop_event.is_set():
-                            time.sleep(0.02)
-                        # Grace period (80ms) for hardware DAC buffer to drain so ending syllables are never cut
-                        if not self._stop_event.is_set():
-                            time.sleep(0.08)
-                except Exception as stream_err:
-                    print(f"[TTSEngine] Callback stream error: {stream_err}, falling back to sd.play()...")
-                    try:
-                        sd.play(stereo_audio, samplerate=SAMPLE_RATE)
-                        while sd.get_stream().active and not self._stop_event.is_set():
-                            if not self._pause_event.is_set():
-                                sd.stop()
-                                break
-                            time.sleep(0.04)
-                        if self._stop_event.is_set():
+                    sd.play(stereo_audio, samplerate=SAMPLE_RATE)
+                    while sd.get_stream().active and not self._stop_event.is_set():
+                        # Handle Pause
+                        if not self._pause_event.is_set():
                             sd.stop()
-                    except Exception as e:
-                        print(f"[TTSEngine] Fallback playback error: {e}")
+                            while not self._pause_event.is_set() and not self._stop_event.is_set():
+                                time.sleep(0.04)
+                            if self._stop_event.is_set():
+                                break
+                            sd.play(stereo_audio, samplerate=SAMPLE_RATE)
+                        time.sleep(0.02)
+
+                    if self._stop_event.is_set():
+                        sd.stop()
+                    else:
+                        sd.wait()
+                except Exception as play_err:
+                    print(f"[TTSEngine] Playback error: {play_err}", flush=True)
 
                 self._audio_queue.task_done()
             except Exception as e:
-                print(f"[TTSEngine] Playback worker error: {e}")
+                print(f"[TTSEngine] Playback worker error: {e}", flush=True)
                 time.sleep(0.1)

@@ -43,8 +43,8 @@ class FloatingHUD:
         except Exception:
             pass
 
-        # Apply Windows 11 DWM native hardware round corner clipping
-        self._apply_dwm_rounding()
+        # Apply Windows 11 DWM attributes (strictly disables rectangular drop shadow)
+        self._apply_dwm_attributes()
 
         # Dimensions & default placement
         self.width = 440
@@ -78,17 +78,26 @@ class FloatingHUD:
             pass
         return "Segoe UI", {"pause": "❚❚", "play": "▶", "stop": "■"}
 
-    def _apply_dwm_rounding(self):
+    def _apply_dwm_attributes(self):
+        """Disables DWM non-client rendering and rectangular drop shadows completely."""
         try:
             self.window.update_idletasks()
             hwnd = ctypes.windll.user32.GetParent(self.window.winfo_id())
             if not hwnd:
                 hwnd = self.window.winfo_id()
             dwm = ctypes.windll.dwmapi
-            # DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2
-            dwm.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(ctypes.c_int(2)), 4)
+            # DWMWA_NCRENDERING_POLICY = 2, DWMNCRP_DISABLED = 1 (removes DWM drop shadow)
+            dwm.DwmSetWindowAttribute(hwnd, 2, ctypes.byref(ctypes.c_int(1)), 4)
+            # DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_DONOTROUND = 1 (prevents DWM shadow generator)
+            dwm.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(ctypes.c_int(1)), 4)
             # DWMWA_USE_IMMERSIVE_DARK_MODE = 20
             dwm.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(ctypes.c_int(1)), 4)
+            # Remove Win32 window class drop shadow if present
+            try:
+                style = ctypes.windll.user32.GetClassLongW(hwnd, -26)
+                ctypes.windll.user32.SetClassLongW(hwnd, -26, style & ~0x00020000)
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -100,9 +109,9 @@ class FloatingHUD:
         self.window.geometry(f"{self.width}x{self.height}+{x}+{y}")
 
     def _build_ui(self):
-        # Outer padding frame colored with TRANS_KEY_COLOR so all pixels outside capsule are invisible
+        # Outer padding frame colored with TRANS_KEY_COLOR with zero padding (no extra shadow margin)
         outer_container = tk.Frame(self.window, bg=TRANS_KEY_COLOR)
-        outer_container.pack(fill="both", expand=True, padx=4, pady=4)
+        outer_container.pack(fill="both", expand=True, padx=0, pady=0)
         outer_container.bind("<Button-1>", self._start_drag)
         outer_container.bind("<B1-Motion>", self._on_drag)
 

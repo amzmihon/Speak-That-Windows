@@ -35,6 +35,10 @@ ctk_datas = collect_data_files('customtkinter')
 misaki_datas = collect_data_files('misaki')
 spacy_datas = collect_data_files('spacy')
 en_datas = collect_data_files('en_core_web_sm')
+espeak_datas = collect_data_files('espeakng_loader')
+espeak_binaries = collect_dynamic_libs('espeakng_loader')
+lt_datas = collect_data_files('language_tags')
+ph_datas = collect_data_files('phonemizer')
 
 onnx_binaries = collect_dynamic_libs('onnxruntime')
 sd_binaries = collect_dynamic_libs('sounddevice')
@@ -42,14 +46,21 @@ sd_binaries = collect_dynamic_libs('sounddevice')
 datas = [
     ('assets', 'assets'),
     ('speak_that/model', 'speak_that/model'),
-] + ctk_datas + misaki_datas + spacy_datas + en_datas
+] + ctk_datas + misaki_datas + spacy_datas + en_datas + espeak_datas + lt_datas + ph_datas
 
-binaries = onnx_binaries + sd_binaries
+binaries = onnx_binaries + sd_binaries + espeak_binaries
 
 hiddenimports = [
     'customtkinter',
     'paradee',
     'misaki',
+    'misaki.en',
+    'misaki.espeak',
+    'espeakng_loader',
+    'language_tags',
+    'phonemizer',
+    'phonemizer.backend',
+    'phonemizer.backend.espeak',
     'spacy',
     'en_core_web_sm',
     'sounddevice',
