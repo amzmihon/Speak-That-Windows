@@ -14,3 +14,4 @@ Invoke-WebRequest -Uri $setupUrl -OutFile $installerPath -UseBasicParsing
 
 Write-Host ">>> Launching installer..." -ForegroundColor Green
 Start-Process -FilePath $installerPath
+

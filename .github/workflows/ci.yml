@@ -37,3 +37,4 @@ jobs:
         run: |
           python -c "import speak_that.config as cfg; conf = cfg.get_config(); print('Config OK:', conf.keys())"
           python -c "from speak_that.selection import get_selected_text; print('Selection module OK')"
+

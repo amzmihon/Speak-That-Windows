@@ -1,17 +1,10 @@
-# 🗣️ SpeakThat
-> Instant, offline text-to-speech for Windows: highlight any text and press `Ctrl+Shift+R` to hear it read aloud.
+# 🗣️ SpeakThat Windows
 
-```powershell
-irm https://raw.githubusercontent.com/amzmihon/Speak-That-Windows/main/install.ps1 | iex
-```
-![SpeakThat Demo](assets/demo.gif)
-
-[![Website](https://img.shields.io/badge/Website-amzmihon.com-6366F1?style=flat-square&logo=google-chrome&logoColor=white)](https://amzmihon.com/Speak-That-Windows)
+[![Landing Page](https://img.shields.io/badge/Website-amzmihon.com-6366F1?style=flat-square&logo=google-chrome&logoColor=white)](https://amzmihon.com/Speak-That-Windows)
 [![GitHub](https://img.shields.io/badge/GitHub-amzmihon%2FSpeak--That--Windows-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/amzmihon/Speak-That-Windows)
-[![Release](https://img.shields.io/badge/Release-v1.2.0-10B981?style=flat-square)](https://github.com/amzmihon/Speak-That-Windows/releases)
+[![Release](https://img.shields.io/badge/Release-v1.2-10B981?style=flat-square)](https://github.com/amzmihon/Speak-That-Windows/releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20x64-0078D4?style=flat-square&logo=windows&logoColor=white)](https://amzmihon.com/Speak-That-Windows)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/amzmihon/Speak-That-Windows/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/amzmihon/Speak-That-Windows/actions)
 
 🌐 **Official Website**: [https://amzmihon.com/Speak-That-Windows](https://amzmihon.com/Speak-That-Windows)  
 🐙 **Source Code**: [https://github.com/amzmihon/Speak-That-Windows](https://github.com/amzmihon/Speak-That-Windows)

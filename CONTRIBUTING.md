@@ -97,3 +97,4 @@ Before submitting a Pull Request, verify that:
 
 ## 📄 License
 By contributing to SpeakThat, you agree that your contributions will be licensed under the project's [MIT License](LICENSE).
+

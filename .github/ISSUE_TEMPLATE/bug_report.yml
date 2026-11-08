@@ -57,3 +57,4 @@ body:
       label: Console or Error Logs
       description: Please copy and paste any terminal output or error messages if available.
       render: shell
+
