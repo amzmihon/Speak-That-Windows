@@ -19,6 +19,7 @@ import customtkinter as ctk
 from PIL import Image
 
 from .config import VOICE_NAMES
+from .hotkeys import format_hotkey_for_display, validate_hotkey, normalize_hotkey
 
 
 VOICE_DETAILS = {
@@ -57,6 +58,206 @@ VOICE_DETAILS = {
 }
 
 
+class ShortcutRecorderDialog(ctk.CTkToplevel):
+    """WinUI 3 Modal Dialog for capturing or typing customized keyboard shortcuts."""
+
+    def __init__(self, master, action_name, current_hotkey, on_save):
+        super().__init__(master)
+        self.action_name = action_name
+        self.on_save = on_save
+        self.captured_hotkey = current_hotkey
+
+        self.title(f"Customize Shortcut — {action_name}")
+        self.geometry("460x280")
+        self.resizable(False, False)
+        self.configure(fg_color="#121622")
+        self.transient(master)
+        self.attributes("-topmost", True)
+
+        try:
+            self.update_idletasks()
+            mx = master.winfo_x()
+            my = master.winfo_y()
+            mw = master.winfo_width()
+            mh = master.winfo_height()
+            x = mx + max(20, (mw - 460) // 2)
+            y = my + max(20, (mh - 280) // 2)
+            self.geometry(f"+{x}+{y}")
+        except Exception:
+            pass
+
+        self._build_ui(current_hotkey)
+
+        self.bind("<KeyPress>", self._on_key_press)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.after(100, self.focus_force)
+
+    def _build_ui(self, current_hotkey):
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=22, pady=18)
+
+        # Title
+        t_row = ctk.CTkFrame(container, fg_color="transparent")
+        t_row.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(
+            t_row,
+            text=f"CUSTOMIZE SHORTCUT: {self.action_name.upper()}",
+            font=("Segoe UI", 11, "bold"),
+            text_color="#818CF8"
+        ).pack(side="left")
+
+        # Instruction
+        ctk.CTkLabel(
+            container,
+            text="Press any key combination on your keyboard, select a preset, or type below:",
+            font=("Segoe UI", 9),
+            text_color="#94A3B8"
+        ).pack(anchor="w", pady=(0, 10))
+
+        # Active shortcut display card
+        disp_card = ctk.CTkFrame(container, corner_radius=12, fg_color="#1A2234", border_width=1, border_color="#334155")
+        disp_card.pack(fill="x", pady=(0, 8))
+
+        self.display_label = ctk.CTkLabel(
+            disp_card,
+            text=format_hotkey_for_display(current_hotkey) or "Press keys...",
+            font=("Segoe UI", 15, "bold"),
+            text_color="#F8FAFC",
+            height=46
+        )
+        self.display_label.pack(fill="x", padx=14)
+
+        # Status note
+        self.status_label = ctk.CTkLabel(
+            container,
+            text="Listening for key combinations... (e.g. Ctrl+Alt+S, Alt+R, F9, Ctrl+Space)",
+            font=("Segoe UI", 8),
+            text_color="#64748B"
+        )
+        self.status_label.pack(anchor="w", pady=(0, 10))
+
+        # Quick Presets row
+        pres_row = ctk.CTkFrame(container, fg_color="transparent")
+        pres_row.pack(fill="x", pady=(0, 16))
+        ctk.CTkLabel(pres_row, text="Presets:", font=("Segoe UI", 9, "bold"), text_color="#64748B").pack(side="left", padx=(0, 6))
+
+        presets = ["Ctrl+Shift+R", "Ctrl+Alt+S", "Alt+S", "Ctrl+Space"] if "Read" in self.action_name else ["Ctrl+Shift+X", "Ctrl+Alt+X", "Alt+X", "Esc"]
+        for p in presets:
+            ctk.CTkButton(
+                pres_row,
+                text=p,
+                width=72,
+                height=24,
+                corner_radius=8,
+                font=("Segoe UI", 8, "bold"),
+                fg_color="#151C2C",
+                hover_color="#2D3A54",
+                text_color="#CBD5E1",
+                border_width=1,
+                border_color="#334155",
+                command=lambda pk=p: self._set_preset(pk)
+            ).pack(side="left", padx=3)
+
+        # Action Buttons (Cancel & Save)
+        btn_row = ctk.CTkFrame(container, fg_color="transparent")
+        btn_row.pack(fill="x")
+
+        ctk.CTkButton(
+            btn_row,
+            text="Cancel",
+            width=80,
+            height=30,
+            corner_radius=10,
+            fg_color="#1E293B",
+            hover_color="#334155",
+            text_color="#94A3B8",
+            font=("Segoe UI", 9, "bold"),
+            command=self.destroy
+        ).pack(side="right", padx=(8, 0))
+
+        self.save_btn = ctk.CTkButton(
+            btn_row,
+            text="Save Shortcut",
+            width=115,
+            height=30,
+            corner_radius=10,
+            fg_color="#6366F1",
+            hover_color="#4F46E5",
+            text_color="#FFFFFF",
+            font=("Segoe UI", 9, "bold"),
+            command=self._do_save
+        )
+        self.save_btn.pack(side="right")
+
+    def _set_preset(self, preset_str):
+        valid, norm = validate_hotkey(preset_str)
+        if valid:
+            self.captured_hotkey = norm
+            self.display_label.configure(text=format_hotkey_for_display(norm), text_color="#10B981")
+            self.status_label.configure(text="Preset selected. Click 'Save Shortcut' to apply.", text_color="#10B981")
+
+    def _on_key_press(self, event):
+        keysym = event.keysym
+        if keysym == "Escape" and not (event.state & 0x0004 or event.state & 0x20000 or event.state & 0x0001):
+            if "Stop" in self.action_name:
+                self.captured_hotkey = "<esc>"
+                self.display_label.configure(text="Esc", text_color="#10B981")
+                self.status_label.configure(text="Esc selected! Click 'Save Shortcut' to apply.", text_color="#10B981")
+                return
+            else:
+                self.destroy()
+                return
+
+        # Determine modifiers
+        mods = []
+        if (event.state & 0x0004) or keysym.startswith("Control"):
+            mods.append("<ctrl>")
+        if (event.state & 0x20000) or (event.state & 0x0008) or keysym.startswith("Alt"):
+            mods.append("<alt>")
+        if (event.state & 0x0001) or keysym.startswith("Shift"):
+            mods.append("<shift>")
+        if keysym.startswith("Win") or keysym.startswith("Super"):
+            mods.append("<cmd>")
+
+        is_modifier = any(keysym.startswith(m) for m in ("Control", "Shift", "Alt", "Win", "Super"))
+        if is_modifier:
+            disp_mods = [m.replace("<", "").replace(">", "").capitalize() for m in mods]
+            self.display_label.configure(text=" + ".join(disp_mods) + " + ...", text_color="#FDE68A")
+            return
+
+        # Non-modifier key
+        k_lower = keysym.lower()
+        if k_lower == "space":
+            k = "<space>"
+        elif k_lower.startswith("f") and k_lower[1:].isdigit():
+            k = f"<{k_lower}>"
+        elif len(k_lower) == 1:
+            k = k_lower
+        elif event.char and event.char.isprintable() and event.char not in " \r\n\t":
+            k = event.char.lower()
+        else:
+            k = f"<{k_lower}>"
+
+        combo_parts = list(mods)
+        if k not in combo_parts:
+            combo_parts.append(k)
+
+        combo_str = "+".join(combo_parts)
+        valid, res = validate_hotkey(combo_str)
+        if valid:
+            self.captured_hotkey = res
+            disp = format_hotkey_for_display(res)
+            self.display_label.configure(text=disp, text_color="#10B981")
+            self.status_label.configure(text=f"✓ Detected: {disp}! Click 'Save Shortcut' to apply.", text_color="#10B981")
+        else:
+            self.status_label.configure(text="Combination needs at least one key (e.g., Ctrl + Alt + S).", text_color="#F87171")
+
+    def _do_save(self):
+        if self.captured_hotkey and self.on_save:
+            self.on_save(self.captured_hotkey)
+        self.destroy()
+
+
 class MainWindow(ctk.CTk):
     """Primary GUI window providing settings, status, manual speech testing, and preferences."""
 
@@ -68,6 +269,12 @@ class MainWindow(ctk.CTk):
         self.on_read_selection = on_read_selection
         self.on_stop_reading = on_stop_reading
         self.on_quit = on_quit
+        self.on_hotkey_change = None
+        self.hud = None
+        self.on_hud_style_change = None
+        self.pref_read_badges_frame = None
+        self.pref_stop_badges_frame = None
+        self.hero_pills_row = None
 
         # Window Appearance
         ctk.set_appearance_mode("Dark")
@@ -392,9 +599,12 @@ class MainWindow(ctk.CTk):
             else:
                 vframe.grid_forget()
 
+        self.current_view_name = name
+
         # Update Header Titles
+        hk_read_disp = format_hotkey_for_display(self.config.get("hotkey_read", "<ctrl>+<shift>+r"))
         subtitles = {
-            "reader": ("Studio Reader", "Select text across any Windows app and press Ctrl+Shift+R"),
+            "reader": ("Studio Reader", f"Select text across any Windows app and press {hk_read_disp}"),
             "voices": ("Voice Personas", "Select, preview, and adjust Paradee's 4 neural voice models"),
             "shortcuts": ("Shortcuts & Behavior", "Configure global hotkeys, window step sizing, and behavior"),
             "model": ("Model & Benchmark", "Paradee 8M architecture specifications and live latency benchmarking")
@@ -426,24 +636,8 @@ class MainWindow(ctk.CTk):
             text_color="#818CF8"
         ).pack(anchor="w")
 
-        pills_row = ctk.CTkFrame(hc_left, fg_color="transparent")
-        pills_row.pack(anchor="w", pady=(4, 4))
-
-        for k in ["Ctrl", "+", "Shift", "+", "R"]:
-            if k == "+":
-                ctk.CTkLabel(pills_row, text="+", font=("Segoe UI", 12, "bold"), text_color="#64748B").pack(side="left", padx=3)
-            else:
-                pill = ctk.CTkLabel(
-                    pills_row,
-                    text=k,
-                    font=("Segoe UI", 11, "bold"),
-                    fg_color="#1E1B4B",
-                    text_color="#C7D2FE",
-                    corner_radius=8,
-                    width=42,
-                    height=24
-                )
-                pill.pack(side="left")
+        self.hero_pills_row = ctk.CTkFrame(hc_left, fg_color="transparent")
+        self.hero_pills_row.pack(anchor="w", pady=(4, 4))
 
         ctk.CTkLabel(
             hc_left,
@@ -978,35 +1172,136 @@ class MainWindow(ctk.CTk):
         hk_inner = ctk.CTkFrame(hk_card, fg_color="transparent")
         hk_inner.pack(fill="x", padx=16, pady=10)
 
+        # Header row with title & Reset button
+        hk_header_row = ctk.CTkFrame(hk_inner, fg_color="transparent")
+        hk_header_row.pack(fill="x", pady=(0, 4))
+
         ctk.CTkLabel(
-            hk_inner,
-            text="SYSTEM-WIDE SHORTCUT KEYS",
+            hk_header_row,
+            text="CUSTOMIZABLE SYSTEM-WIDE SHORTCUT KEYS",
             font=("Segoe UI", 9, "bold"),
             text_color="#818CF8"
-        ).pack(anchor="w", pady=(0, 6))
+        ).pack(side="left")
 
-        r_hk = ctk.CTkFrame(hk_inner, fg_color="transparent")
-        r_hk.pack(fill="x")
+        ctk.CTkButton(
+            hk_header_row,
+            text="↺ Reset to Defaults",
+            width=115,
+            height=24,
+            corner_radius=8,
+            font=("Segoe UI", 8, "bold"),
+            fg_color="#1E293B",
+            hover_color="#334155",
+            text_color="#94A3B8",
+            border_width=1,
+            border_color="#334155",
+            command=self._on_reset_hotkeys
+        ).pack(side="right")
 
-        # Read
-        ctk.CTkLabel(r_hk, text="Read Selection:", font=("Segoe UI", 10, "bold"), text_color="#94A3B8").pack(side="left")
-        p1 = ctk.CTkFrame(r_hk, fg_color="transparent")
-        p1.pack(side="left", padx=(6, 20))
-        for k in ["Ctrl", "+", "Shift", "+", "R"]:
-            if k == "+":
-                ctk.CTkLabel(p1, text="+", font=("Segoe UI", 10, "bold"), text_color="#64748B").pack(side="left", padx=2)
-            else:
-                ctk.CTkLabel(p1, text=k, font=("Segoe UI", 9, "bold"), fg_color="#1E1B4B", text_color="#C7D2FE", corner_radius=4, width=38, height=20).pack(side="left")
+        ctk.CTkLabel(
+            hk_inner,
+            text="Press 'Change' to record any custom keyboard shortcut, or click a quick preset.",
+            font=("Segoe UI", 9),
+            text_color="#94A3B8"
+        ).pack(anchor="w", pady=(0, 8))
 
-        # Stop
-        ctk.CTkLabel(r_hk, text="Stop Speech:", font=("Segoe UI", 10, "bold"), text_color="#94A3B8").pack(side="left")
-        p2 = ctk.CTkFrame(r_hk, fg_color="transparent")
-        p2.pack(side="left", padx=(6, 0))
-        for k in ["Ctrl", "+", "Shift", "+", "X"]:
-            if k == "+":
-                ctk.CTkLabel(p2, text="+", font=("Segoe UI", 10, "bold"), text_color="#64748B").pack(side="left", padx=2)
-            else:
-                ctk.CTkLabel(p2, text=k, font=("Segoe UI", 9, "bold"), fg_color="#3B1219", text_color="#FECACA", corner_radius=4, width=38, height=20).pack(side="left")
+        # --- Row 1: Read Selection ---
+        r1_frame = ctk.CTkFrame(hk_inner, fg_color="#0F1420", corner_radius=10, border_width=1, border_color="#1F283B")
+        r1_frame.pack(fill="x", pady=(0, 6), padx=0)
+
+        r1_inner = ctk.CTkFrame(r1_frame, fg_color="transparent")
+        r1_inner.pack(fill="x", padx=10, pady=8)
+
+        # Left: label + badge container
+        r1_left = ctk.CTkFrame(r1_inner, fg_color="transparent")
+        r1_left.pack(side="left")
+
+        ctk.CTkLabel(r1_left, text="Read Selection:", font=("Segoe UI", 10, "bold"), text_color="#F8FAFC").pack(side="left", padx=(0, 8))
+        self.pref_read_badges_frame = ctk.CTkFrame(r1_left, fg_color="transparent")
+        self.pref_read_badges_frame.pack(side="left")
+
+        # Right: presets + Change button
+        r1_right = ctk.CTkFrame(r1_inner, fg_color="transparent")
+        r1_right.pack(side="right")
+
+        ctk.CTkLabel(r1_right, text="Presets:", font=("Segoe UI", 8, "bold"), text_color="#64748B").pack(side="left", padx=(0, 4))
+        for p in ["Ctrl+Shift+R", "Ctrl+Alt+S", "Alt+S", "Ctrl+Space"]:
+            ctk.CTkButton(
+                r1_right,
+                text=p,
+                width=68,
+                height=22,
+                corner_radius=6,
+                font=("Segoe UI", 8, "bold"),
+                fg_color="#1A2234",
+                hover_color="#2D3A54",
+                text_color="#CBD5E1",
+                border_width=1,
+                border_color="#334155",
+                command=lambda pk=p: self._apply_hotkey_preset("Read", pk)
+            ).pack(side="left", padx=2)
+
+        ctk.CTkButton(
+            r1_right,
+            text="⌨ Change",
+            width=76,
+            height=24,
+            corner_radius=8,
+            font=("Segoe UI", 9, "bold"),
+            fg_color="#6366F1",
+            hover_color="#4F46E5",
+            text_color="#FFFFFF",
+            command=lambda: self._open_hotkey_recorder("Read")
+        ).pack(side="left", padx=(6, 0))
+
+        # --- Row 2: Stop Reading ---
+        r2_frame = ctk.CTkFrame(hk_inner, fg_color="#0F1420", corner_radius=10, border_width=1, border_color="#1F283B")
+        r2_frame.pack(fill="x", pady=(0, 0), padx=0)
+
+        r2_inner = ctk.CTkFrame(r2_frame, fg_color="transparent")
+        r2_inner.pack(fill="x", padx=10, pady=8)
+
+        # Left: label + badge container
+        r2_left = ctk.CTkFrame(r2_inner, fg_color="transparent")
+        r2_left.pack(side="left")
+
+        ctk.CTkLabel(r2_left, text="Stop Speech:", font=("Segoe UI", 10, "bold"), text_color="#F8FAFC").pack(side="left", padx=(0, 8))
+        self.pref_stop_badges_frame = ctk.CTkFrame(r2_left, fg_color="transparent")
+        self.pref_stop_badges_frame.pack(side="left")
+
+        # Right: presets + Change button
+        r2_right = ctk.CTkFrame(r2_inner, fg_color="transparent")
+        r2_right.pack(side="right")
+
+        ctk.CTkLabel(r2_right, text="Presets:", font=("Segoe UI", 8, "bold"), text_color="#64748B").pack(side="left", padx=(0, 4))
+        for p in ["Ctrl+Shift+X", "Ctrl+Alt+X", "Alt+X", "Esc"]:
+            ctk.CTkButton(
+                r2_right,
+                text=p,
+                width=68,
+                height=22,
+                corner_radius=6,
+                font=("Segoe UI", 8, "bold"),
+                fg_color="#1A2234",
+                hover_color="#2D3A54",
+                text_color="#CBD5E1",
+                border_width=1,
+                border_color="#334155",
+                command=lambda pk=p: self._apply_hotkey_preset("Stop", pk)
+            ).pack(side="left", padx=2)
+
+        ctk.CTkButton(
+            r2_right,
+            text="⌨ Change",
+            width=76,
+            height=24,
+            corner_radius=8,
+            font=("Segoe UI", 9, "bold"),
+            fg_color="#EF4444",
+            hover_color="#DC2626",
+            text_color="#FFFFFF",
+            command=lambda: self._open_hotkey_recorder("Stop")
+        ).pack(side="left", padx=(6, 0))
 
         # --- 3. Floating Pop-up Widget Style Card ---
         hud_card = ctk.CTkFrame(container, corner_radius=16, fg_color="#151C2C", border_width=1, border_color="#222D42")
@@ -1390,6 +1685,118 @@ class MainWindow(ctk.CTk):
         for (pw, ph), btn in self.size_btn_widgets.items():
             if pw == cur_w and ph == cur_h:
                 btn.configure(fg_color="#6366F1", hover_color="#4F46E5")
+
+        # 6. Render hotkey badges & update button labels
+        self._render_hotkey_badges()
+
+    def _render_hotkey_badges(self):
+        """Re-renders hotkey keycap badges in Hero card, Preferences card, and updates button titles."""
+        hk_read = self.config.get("hotkey_read", "<ctrl>+<shift>+r")
+        hk_stop = self.config.get("hotkey_stop", "<ctrl>+<shift>+x")
+        disp_read = format_hotkey_for_display(hk_read)
+        disp_stop = format_hotkey_for_display(hk_stop)
+
+        # 1. Update hero stop button text
+        if hasattr(self, "hero_stop_btn") and self.hero_stop_btn:
+            self.hero_stop_btn.configure(text=f"⏹ Stop ({disp_stop})")
+
+        # 2. Update hero pills in Reader View
+        if hasattr(self, "hero_pills_row") and self.hero_pills_row:
+            for w in self.hero_pills_row.winfo_children():
+                w.destroy()
+            parts = disp_read.split(" + ")
+            for i, p in enumerate(parts):
+                if i > 0:
+                    ctk.CTkLabel(self.hero_pills_row, text="+", font=("Segoe UI", 12, "bold"), text_color="#64748B").pack(side="left", padx=3)
+                ctk.CTkLabel(
+                    self.hero_pills_row,
+                    text=p,
+                    font=("Segoe UI", 11, "bold"),
+                    fg_color="#1E1B4B",
+                    text_color="#C7D2FE",
+                    corner_radius=8,
+                    height=24
+                ).pack(side="left")
+
+        # 3. Update Preferences Read Badges
+        if hasattr(self, "pref_read_badges_frame") and self.pref_read_badges_frame:
+            for w in self.pref_read_badges_frame.winfo_children():
+                w.destroy()
+            parts = disp_read.split(" + ")
+            for i, p in enumerate(parts):
+                if i > 0:
+                    ctk.CTkLabel(self.pref_read_badges_frame, text="+", font=("Segoe UI", 9, "bold"), text_color="#64748B").pack(side="left", padx=2)
+                ctk.CTkLabel(
+                    self.pref_read_badges_frame,
+                    text=p,
+                    font=("Segoe UI", 9, "bold"),
+                    fg_color="#1E1B4B",
+                    text_color="#C7D2FE",
+                    corner_radius=6,
+                    height=20
+                ).pack(side="left")
+
+        # 4. Update Preferences Stop Badges
+        if hasattr(self, "pref_stop_badges_frame") and self.pref_stop_badges_frame:
+            for w in self.pref_stop_badges_frame.winfo_children():
+                w.destroy()
+            parts = disp_stop.split(" + ")
+            for i, p in enumerate(parts):
+                if i > 0:
+                    ctk.CTkLabel(self.pref_stop_badges_frame, text="+", font=("Segoe UI", 9, "bold"), text_color="#64748B").pack(side="left", padx=2)
+                ctk.CTkLabel(
+                    self.pref_stop_badges_frame,
+                    text=p,
+                    font=("Segoe UI", 9, "bold"),
+                    fg_color="#3B1219",
+                    text_color="#FECACA",
+                    corner_radius=6,
+                    height=20
+                ).pack(side="left")
+
+        # 5. Update Header Subtitle if currently on reader view
+        if hasattr(self, "current_view_name") and self.current_view_name == "reader":
+            if hasattr(self, "view_sub_label") and self.view_sub_label:
+                self.view_sub_label.configure(text=f"Select text across any Windows app and press {disp_read}")
+
+    def _open_hotkey_recorder(self, action_type):
+        """Opens live hotkey recorder modal dialog."""
+        current = self.config.get("hotkey_read" if action_type == "Read" else "hotkey_stop", "")
+        def _on_save(new_hotkey):
+            if action_type == "Read":
+                self.config.set("hotkey_read", new_hotkey)
+            else:
+                self.config.set("hotkey_stop", new_hotkey)
+            self._render_hotkey_badges()
+            if self.on_hotkey_change:
+                self.on_hotkey_change(
+                    self.config.get("hotkey_read", "<ctrl>+<shift>+r"),
+                    self.config.get("hotkey_stop", "<ctrl>+<shift>+x")
+                )
+        ShortcutRecorderDialog(self, action_name=f"{action_type} Shortcut", current_hotkey=current, on_save=_on_save)
+
+    def _apply_hotkey_preset(self, action_type, preset_str):
+        """Applies a hotkey preset immediately."""
+        valid, norm = validate_hotkey(preset_str)
+        if valid:
+            if action_type == "Read":
+                self.config.set("hotkey_read", norm)
+            else:
+                self.config.set("hotkey_stop", norm)
+            self._render_hotkey_badges()
+            if self.on_hotkey_change:
+                self.on_hotkey_change(
+                    self.config.get("hotkey_read", "<ctrl>+<shift>+r"),
+                    self.config.get("hotkey_stop", "<ctrl>+<shift>+x")
+                )
+
+    def _on_reset_hotkeys(self):
+        """Resets hotkeys to standard defaults: Ctrl+Shift+R and Ctrl+Shift+X."""
+        self.config.set("hotkey_read", "<ctrl>+<shift>+r")
+        self.config.set("hotkey_stop", "<ctrl>+<shift>+x")
+        self._render_hotkey_badges()
+        if self.on_hotkey_change:
+            self.on_hotkey_change("<ctrl>+<shift>+r", "<ctrl>+<shift>+x")
 
     def _on_speak_box_text(self):
         text = self.text_box.get("1.0", "end").strip()

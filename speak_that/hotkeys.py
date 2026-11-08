@@ -45,6 +45,48 @@ def normalize_hotkey(hotkey_str):
     return "+".join(norm_parts)
 
 
+def format_hotkey_for_display(hotkey_str):
+    """Converts internal pynput hotkey string (<ctrl>+<shift>+r) into readable 'Ctrl + Shift + R'."""
+    if not hotkey_str:
+        return ""
+    parts = hotkey_str.lower().replace("<", "").replace(">", "").split("+")
+    display_parts = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if p in ("ctrl", "control"):
+            display_parts.append("Ctrl")
+        elif p in ("alt", "menu"):
+            display_parts.append("Alt")
+        elif p == "shift":
+            display_parts.append("Shift")
+        elif p in ("cmd", "win", "windows", "super"):
+            display_parts.append("Win")
+        elif p == "space":
+            display_parts.append("Space")
+        elif p in ("esc", "escape"):
+            display_parts.append("Esc")
+        elif p.startswith("f") and p[1:].isdigit():
+            display_parts.append(p.upper())
+        else:
+            display_parts.append(p.upper())
+    return " + ".join(display_parts)
+
+
+def validate_hotkey(hotkey_str):
+    """Validates if a hotkey string can be registered with pynput.GlobalHotKeys."""
+    if not hotkey_str or not hotkey_str.strip():
+        return False, "Shortcut cannot be empty."
+    norm = normalize_hotkey(hotkey_str)
+    try:
+        from pynput import keyboard
+        _ = keyboard.GlobalHotKeys({norm: lambda: None})
+        return True, norm
+    except Exception as e:
+        return False, f"Invalid shortcut combination: {e}"
+
+
 class HotkeyManager:
     """Manages global Windows hotkeys for reading and stopping speech."""
 
@@ -59,8 +101,11 @@ class HotkeyManager:
         self._lock = threading.RLock()
 
     def set_hotkeys(self, read_str, stop_str):
-        self.hotkey_read_str = normalize_hotkey(read_str)
-        self.hotkey_stop_str = normalize_hotkey(stop_str)
+        with self._lock:
+            self.hotkey_read_str = normalize_hotkey(read_str)
+            self.hotkey_stop_str = normalize_hotkey(stop_str)
+            if self._hotkeys is not None:
+                self.start()
 
     def start(self):
         with self._lock:

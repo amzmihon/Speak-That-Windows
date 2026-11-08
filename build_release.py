@@ -188,14 +188,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
    $s1 = $ws.CreateShortcut($d); ^
    $s1.TargetPath = '%TARGET_DIR%\\SpeakThat.exe'; ^
    $s1.WorkingDirectory = '%TARGET_DIR%'; ^
-   $s1.IconLocation = '%TARGET_DIR%\\assets\\icon.ico,0'; ^
+   $s1.IconLocation = '%TARGET_DIR%\\assets\\icon.ico'; ^
    $s1.Description = 'SpeakThat - Windows Text Reader'; ^
    $s1.Save(); ^
    $sm = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\\SpeakThat.lnk'; ^
    $s2 = $ws.CreateShortcut($sm); ^
    $s2.TargetPath = '%TARGET_DIR%\\SpeakThat.exe'; ^
    $s2.WorkingDirectory = '%TARGET_DIR%'; ^
-   $s2.IconLocation = '%TARGET_DIR%\\assets\\icon.ico,0'; ^
+   $s2.IconLocation = '%TARGET_DIR%\\assets\\icon.ico'; ^
    $s2.Description = 'SpeakThat - Windows Text Reader'; ^
    $s2.Save();"
 

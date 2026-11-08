@@ -145,7 +145,7 @@ $desktop = Join-Path ([Environment]::GetFolderPath('Desktop')) 'SpeakThat.lnk'
 $s1 = $ws.CreateShortcut($desktop)
 $s1.TargetPath = '{exe_path}'
 $s1.WorkingDirectory = '{target_dir}'
-$s1.IconLocation = '{ico_path},0'
+$s1.IconLocation = '{ico_path}'
 $s1.Description = 'SpeakThat - Windows Text Reader'
 $s1.Save()
 
@@ -153,7 +153,7 @@ $startMenu = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\\Sp
 $s2 = $ws.CreateShortcut($startMenu)
 $s2.TargetPath = '{exe_path}'
 $s2.WorkingDirectory = '{target_dir}'
-$s2.IconLocation = '{ico_path},0'
+$s2.IconLocation = '{ico_path}'
 $s2.Description = 'SpeakThat - Windows Text Reader'
 $s2.Save()
 """

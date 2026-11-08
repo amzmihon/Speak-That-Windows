@@ -7,6 +7,7 @@ import pystray
 from pystray import MenuItem as item, Menu
 
 from .config import VOICE_NAMES
+from .hotkeys import format_hotkey_for_display
 
 
 class TrayManager:
@@ -90,12 +91,15 @@ class TrayManager:
                 item(s_lbl, make_hud_handler(s_key), checked=make_hud_checker(s_key), radio=True)
             )
 
+        hk_read = format_hotkey_for_display(self.config.get("hotkey_read", "<ctrl>+<shift>+r"))
+        hk_stop = format_hotkey_for_display(self.config.get("hotkey_stop", "<ctrl>+<shift>+x"))
+
         return Menu(
             item(f"SpeakThat ({self._status_text})", lambda: None, enabled=False),
             Menu.SEPARATOR,
             item("Open Settings Dashboard", lambda icon, it: self.on_show_window() if self.on_show_window else None, default=True),
-            item("Read Selected Text (Ctrl+Shift+R)", lambda icon, it: self.on_read() if self.on_read else None),
-            item("Stop Reading (Ctrl+Shift+X)", lambda icon, it: self.on_stop() if self.on_stop else None),
+            item(f"Read Selected Text ({hk_read})", lambda icon, it: self.on_read() if self.on_read else None),
+            item(f"Stop Reading ({hk_stop})", lambda icon, it: self.on_stop() if self.on_stop else None),
             Menu.SEPARATOR,
             item("Voice", Menu(*voice_items)),
             item("Speed", Menu(*speed_items)),

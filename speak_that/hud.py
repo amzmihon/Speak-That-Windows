@@ -221,6 +221,7 @@ class FloatingHUD:
             outer_container,
             corner_radius=cfg["corner_radius"],
             fg_color="#1A1816",
+            bg_color=TRANS_KEY_COLOR,
             border_width=1,
             border_color="#4F4336"
         )

@@ -67,6 +67,7 @@ class SpeakThatApp:
         )
         self.window.hud = self.hud
         self.window.on_hud_style_change = self.on_hud_style_change
+        self.window.on_hotkey_change = self.update_hotkeys
 
         # 5. System Tray Manager
         self.tray = TrayManager(
@@ -232,6 +233,15 @@ class SpeakThatApp:
             self.tray.update_menu()
         if hasattr(self, "window") and self.window:
             self.window._load_config_to_ui()
+
+    def update_hotkeys(self, read_str, stop_str):
+        """Update system-wide hotkeys and rebind listener in real-time."""
+        self.config.set("hotkey_read", read_str)
+        self.config.set("hotkey_stop", stop_str)
+        if hasattr(self, "hotkeys") and self.hotkeys:
+            self.hotkeys.set_hotkeys(read_str, stop_str)
+        if hasattr(self, "tray") and self.tray:
+            self.tray.update_menu()
 
     def _on_engine_status(self, status):
         self.window.update_status(status)
