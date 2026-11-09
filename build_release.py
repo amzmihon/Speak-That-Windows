@@ -205,7 +205,7 @@ coll = COLLECT(
     print(f"[✓] Optimization complete: Pruned {pruned_count} files ({pruned_bytes / 1024 / 1024:.2f} MB saved)!")
 
     # 5. Copy essential companion files into dist/SpeakThat
-    for fname in ["config.json", "README.md", "assets"]:
+    for fname in ["config.json", "README.md", "LICENSE", "assets"]:
         fpath = os.path.join(base_dir, fname)
         if os.path.exists(fpath):
             if os.path.isdir(fpath):
