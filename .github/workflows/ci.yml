@@ -15,10 +15,10 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.13
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.12"
           cache: "pip"
 
       - name: Install Dependencies
@@ -35,6 +35,6 @@ jobs:
 
       - name: Run Configuration & Module Sanity Check
         run: |
-          python -c "import speak_that.config as cfg; conf = cfg.get_config(); print('Config OK:', conf.keys())"
+          python -c "import speak_that.config as cfg; conf = cfg.Config().data; print('Config OK:', list(conf.keys()))"
           python -c "from speak_that.selection import get_selected_text; print('Selection module OK')"
 
