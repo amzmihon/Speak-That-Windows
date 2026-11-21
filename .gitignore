@@ -1,3 +1,10 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+*.pdb
+*.ilk
+*.obj
+
 # Virtual Environment
 .venv/
 env/
@@ -11,17 +18,23 @@ __pycache__/
 *.so
 .pytest_cache/
 .mypy_cache/
+*.egg-info/
 
-# SpeakThat runtime user data & test audio
+# SpeakThat runtime user data, logs & test audio
 *.wav
 /config.json
 *.log
 speakthat_debug.log
+*.onnx.part
+*.part
 
 # Build & packaging artifacts
 build/
 dist/
 backup/
+*.zip
+*.crx
+*.xpi
 
 # Repository dependencies
 paradee-repo/
@@ -29,6 +42,12 @@ paradee-repo/
 # OS / Editor files
 .DS_Store
 Thumbs.db
+ehthumbs.db
+desktop.ini
 .vscode/
 .idea/
+.vs/
 *.tmp
+*.swp
+*.swo
+*~
