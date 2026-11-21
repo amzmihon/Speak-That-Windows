@@ -71,7 +71,7 @@ function getWordRegex() {
 function bionicTransformTextNode(textNode, regex, ratio) {
   if (!textNode || !textNode.parentNode) return;
   const parent = textNode.parentNode;
-  if (parent.closest && parent.closest('[data-bionic="1"], [data-bionic-bold="1"], b[data-bionic="1"], adhd-border-host, #bionic-reader-overlay')) {
+  if (parent.closest && parent.closest('[data-bionic="1"], [data-bionic-bold="1"], [data-bionic-rest="1"], b[data-bionic="1"], adhd-border-host, #bionic-reader-overlay')) {
     return;
   }
   const text = textNode.nodeValue;
@@ -98,7 +98,10 @@ function bionicTransformTextNode(textNode, regex, ratio) {
       wrapper.appendChild(b);
 
       if (restPart) {
-        wrapper.appendChild(document.createTextNode(restPart));
+        const restSpan = document.createElement('span');
+        restSpan.setAttribute('data-bionic-rest', '1');
+        restSpan.textContent = restPart;
+        wrapper.appendChild(restSpan);
       }
     } else if (match[2]) {
       wrapper.appendChild(document.createTextNode(match[2]));
@@ -166,7 +169,7 @@ async function processSubtree(rootNode, isFullPage = false) {
         if (!parent) return NodeFilter.FILTER_REJECT;
         const tag = parent.tagName;
         if (EXCLUDED_TAGS.has(tag)) return NodeFilter.FILTER_REJECT;
-        if (parent.closest && parent.closest('[data-bionic="1"], [data-bionic-bold="1"], b[data-bionic], adhd-border-host, #bionic-reader-overlay, [contenteditable="true"]')) {
+        if (parent.closest && parent.closest('[data-bionic="1"], [data-bionic-bold="1"], [data-bionic-rest="1"], b[data-bionic], adhd-border-host, #bionic-reader-overlay, [contenteditable="true"]')) {
           return NodeFilter.FILTER_REJECT;
         }
         if (parent.isContentEditable) return NodeFilter.FILTER_REJECT;
@@ -227,14 +230,14 @@ function handleMutations(mutations) {
       if (added.nodeType === Node.ELEMENT_NODE) {
         const tag = added.tagName;
         if (tag === 'HEAD' || EXCLUDED_TAGS.has(tag)) continue;
-        if (added.hasAttribute && (added.hasAttribute('data-bionic') || added.hasAttribute('data-bionic-bold'))) continue;
-        if (added.closest && added.closest('[data-bionic="1"], [data-bionic-bold="1"], adhd-border-host, #bionic-reader-overlay')) continue;
+        if (added.hasAttribute && (added.hasAttribute('data-bionic') || added.hasAttribute('data-bionic-bold') || added.hasAttribute('data-bionic-rest'))) continue;
+        if (added.closest && added.closest('[data-bionic="1"], [data-bionic-bold="1"], [data-bionic-rest="1"], adhd-border-host, #bionic-reader-overlay')) continue;
         mutationQueue.add(added);
         hasAdded = true;
       } else if (added.nodeType === Node.TEXT_NODE) {
         const parent = added.parentElement;
         if (parent && !EXCLUDED_TAGS.has(parent.tagName)) {
-          if (!parent.closest || !parent.closest('[data-bionic="1"], [data-bionic-bold="1"], adhd-border-host, #bionic-reader-overlay')) {
+          if (!parent.closest || !parent.closest('[data-bionic="1"], [data-bionic-bold="1"], [data-bionic-rest="1"], adhd-border-host, #bionic-reader-overlay')) {
             mutationQueue.add(added);
             hasAdded = true;
           }
@@ -346,7 +349,12 @@ function injectStyles(settings) {
   style.textContent = `
     span[data-bionic="1"] {
       display: inline !important;
-      font-weight: inherit !important;
+      font-weight: 400 !important;
+      color: inherit !important;
+    }
+    span[data-bionic-rest="1"] {
+      display: inline !important;
+      font-weight: 400 !important;
       color: inherit !important;
     }
     b[data-bionic-bold="1"], b[data-bionic="1"] {
@@ -697,7 +705,12 @@ function enableReaderMode() {
     }
     span[data-bionic="1"] {
       display: inline !important;
-      font-weight: inherit !important;
+      font-weight: 400 !important;
+      color: inherit !important;
+    }
+    span[data-bionic-rest="1"] {
+      display: inline !important;
+      font-weight: 400 !important;
       color: inherit !important;
     }
   `;
