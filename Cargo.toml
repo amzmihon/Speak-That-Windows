@@ -1,0 +1,30 @@
+[package]
+name = "speakthat"
+version = "0.2.0"
+edition = "2021"
+authors = ["Abdullah Mohammad Zakaria <amzakariamehon@gmail.com>"]
+description = "Unified Windows Accessibility & Reading Suite: SpeakThat + Bionic Reader"
+
+[dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Accessibility",
+    "Win32_System_Com",
+    "Win32_System_DataExchange",
+    "Win32_System_Registry",
+    "Win32_Graphics_Gdi",
+] }
+
+tokio = { version = "1.38", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["default-tls", "stream"] }
+futures-util = "0.3"
+sha2 = "0.10"
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dirs = "5.0"
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

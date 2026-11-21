@@ -1,5 +1,8 @@
 # Goldfish Annotated Review Report
 
+**Status:** resolved  
+**Resolution:** All findings (Blockers, Majors, Nits) addressed in `docs/designs/unified_accessibility_suite.md`, input models, duplex arbiter, surrogate pairs, and on-demand downloader architecture.
+
 **Target:** `E:\Speak-That-Windows\docs\designs\unified_accessibility_suite.md` (`Lines 1..292`)
 
 ## Prioritized Findings & AI Suggestions
