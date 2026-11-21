@@ -9,8 +9,16 @@ use crate::input::chord::{InputChord, ModifierKey, TriggerMode, TriggerSource};
 pub struct AppConfig {
     pub tts: TtsSettings,
     pub stt: SttSettings,
+    pub bionic: BionicSettings,
     pub shortcuts: ShortcutConfig,
     pub process_blacklist: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BionicSettings {
+    pub enabled: bool,
+    pub fixation_ratio: f32,
+    pub allowed_scripts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,9 +50,9 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             tts: TtsSettings {
-                speed: 1.0,
+                speed: 1.05,
                 volume: 1.0,
-                voice_id: "paradee-8m".into(),
+                voice_id: "bf_isabella".into(),
                 auto_resume_after_dictation: false,
             },
             stt: SttSettings {
@@ -52,6 +60,11 @@ impl Default for AppConfig {
                 model_installed: false,
                 hold_threshold_ms: 200,
                 audio_ducking_db: -24.0,
+            },
+            bionic: BionicSettings {
+                enabled: true,
+                fixation_ratio: 0.4,
+                allowed_scripts: vec!["Latin".to_string()],
             },
             shortcuts: ShortcutConfig {
                 // Ctrl + Space to speak highlighted text

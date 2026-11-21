@@ -137,6 +137,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     });
                 } else if chord == config.shortcuts.open_home {
                     info!("Action: Open Home Dashboard triggered");
+                    let cfg = config.clone();
+                    let tts = Arc::clone(&tts_engine);
+                    std::thread::spawn(move || {
+                        let native_options = eframe::NativeOptions {
+                            viewport: eframe::egui::ViewportBuilder::default()
+                                .with_inner_size([740.0, 540.0])
+                                .with_min_inner_size([620.0, 420.0]),
+                            ..Default::default()
+                        };
+                        let _ = eframe::run_native(
+                            "SpeakThat Settings Dashboard",
+                            native_options,
+                            Box::new(|_cc| Box::new(ui::SettingsDashboard::new(cfg, tts))),
+                        );
+                    });
                 } else if chord == config.shortcuts.push_to_talk {
                     info!("Action: Push-to-Talk triggered via keyboard shortcut");
                     mic_manager.on_ptt_press();
