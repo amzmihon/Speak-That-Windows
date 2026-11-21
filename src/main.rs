@@ -1,15 +1,22 @@
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
+mod audio;
+mod bionic;
+mod clipboard;
 mod config;
 mod downloader;
 mod input;
 mod ui;
 
+use audio::{MicrophoneManager, SttEngine, TtsEngine};
+use bionic::BionicEngine;
+use clipboard::SelectionCapture;
 use config::AppConfig;
 use downloader::ModelDownloader;
-use input::{HookEvent, InputHookManager, ShortcutCatalog};
+use input::{HookEvent, InputHookManager, ShortcutCatalog, TextInjector};
 use ui::BrowserDetector;
 
 #[tokio::main]
@@ -64,9 +71,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("    Install helper: {}", b.install_url);
     }
 
-    // 5. Check Offline Models Status
+    // 5. Initialize Audio & Bionic Engines
     let stt_installed = ModelDownloader::is_model_installed();
     info!("Speech-to-Text (Parakeet-TDT 0.6B) Model Status: {}", if stt_installed { "Installed" } else { "Not Installed (On-Demand in-app download available)" });
+
+    let (tts_engine, _tts_rx) = TtsEngine::new();
+    let (mic_manager, _ptt_rx, _duck_rx) = MicrophoneManager::new();
+    let model_path = dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("SpeakThat")
+        .join("models")
+        .join("parakeet-tdt-0.6b-v3.onnx");
+    let (stt_engine, _stt_rx) = SttEngine::new(model_path);
+    let bionic_engine = BionicEngine::new(0.4);
+
+    let tts_engine = Arc::new(tts_engine);
+    let mic_manager = Arc::new(mic_manager);
+    let _stt_engine = Arc::new(stt_engine);
+    let bionic_engine = Arc::new(bionic_engine);
 
     // 6. Initialize Low-Level Input Hooks
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<HookEvent>();
@@ -81,9 +103,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match event {
             HookEvent::ChordTriggered(chord) => {
                 info!("Chord triggered: {}", chord);
+
+                if chord == config.shortcuts.speak_selection {
+                    info!("Action: Speak Selection triggered");
+                    let tts = Arc::clone(&tts_engine);
+                    tokio::spawn(async move {
+                        match SelectionCapture::capture_selected_text_synthetic(Duration::from_millis(150)).await {
+                            Ok(text) => {
+                                info!("Captured selected text: {} chars", text.len());
+                                tts.speak(&text);
+                            }
+                            Err(e) => {
+                                warn!("Could not capture selection: {}", e);
+                            }
+                        }
+                    });
+                } else if chord == config.shortcuts.toggle_bionic {
+                    info!("Action: Native Windows Bionic In-Place Transformation triggered");
+                    let engine = Arc::clone(&bionic_engine);
+                    tokio::spawn(async move {
+                        match SelectionCapture::capture_selected_text_synthetic(Duration::from_millis(150)).await {
+                            Ok(text) => {
+                                let bionic_text = engine.to_unicode_bionic(&text);
+                                info!("Transformed {} chars to native Bionic Unicode format", bionic_text.len());
+                                if let Err(e) = TextInjector::inject_text(&bionic_text) {
+                                    warn!("Failed to inject bionic text: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Could not capture selection for Bionic reading: {}", e);
+                            }
+                        }
+                    });
+                } else if chord == config.shortcuts.open_home {
+                    info!("Action: Open Home Dashboard triggered");
+                } else if chord == config.shortcuts.push_to_talk {
+                    info!("Action: Push-to-Talk triggered via keyboard shortcut");
+                    mic_manager.on_ptt_press();
+                }
             }
             HookEvent::SideButtonHoldStart(btn) => {
                 info!("Side mouse button {} pressed (Push-to-Talk listening...)", btn);
+                mic_manager.on_ptt_press();
             }
             HookEvent::SideButtonHoldEnd(btn, duration) => {
                 info!(
@@ -91,6 +152,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     btn,
                     duration.as_millis()
                 );
+                mic_manager.on_ptt_release();
             }
         }
     }

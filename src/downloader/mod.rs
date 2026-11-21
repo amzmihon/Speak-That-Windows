@@ -137,6 +137,15 @@ impl ModelDownloader {
 
         // Verify Hash
         let _ = self.state_tx.send(DownloadState::VerifyingHash);
+        let bytes = tokio::fs::read(&part_path)
+            .await
+            .map_err(|e| format!("Failed to read part for hash verification: {}", e))?;
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        let calculated = format!("{:x}", hasher.finalize());
+        if !Self::EXPECTED_SHA256.is_empty() && calculated != Self::EXPECTED_SHA256 {
+            tracing::warn!("Model hash mismatch! Calculated: {}, Expected: {}", calculated, Self::EXPECTED_SHA256);
+        }
 
         tokio::fs::rename(part_path, final_path)
             .await
