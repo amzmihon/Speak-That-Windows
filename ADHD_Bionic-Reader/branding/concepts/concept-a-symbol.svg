@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title-a">
+  <title id="title-a">The Bionic B - Fixation Anchor</title>
+  <!-- Left Stem: Solid Fixation Anchor -->
+  <path fill="#000000" d="M 56,36 L 92,36 L 92,220 L 56,220 C 47.16,220 40,212.84 40,204 L 40,52 C 40,43.16 47.16,36 56,36 Z"/>
+  <!-- Top Kinetic Bowl -->
+  <path fill="#000000" fill-rule="evenodd" d="
+    M 108,36
+    L 160,36
+    A 42,42 0 0 1 202,78
+    A 42,42 0 0 1 160,120
+    L 108,120
+    Z
+    M 108,62
+    L 156,62
+    A 16,16 0 0 1 172,78
+    A 16,16 0 0 1 156,94
+    L 108,94
+    Z
+  "/>
+  <!-- Bottom Kinetic Bowl (Optical Overshoot) -->
+  <path fill="#000000" fill-rule="evenodd" d="
+    M 108,128
+    L 166,128
+    A 46,46 0 0 1 212,174
+    A 46,46 0 0 1 166,220
+    L 108,220
+    Z
+    M 108,154
+    L 162,154
+    A 20,20 0 0 1 182,174
+    A 20,20 0 0 1 162,194
+    L 108,194
+    Z
+  "/>
+</svg>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title-c">
+  <title id="title-c">The Focus Lock - Bionic Reticle</title>
+  <!-- Top-Left Focus Bracket -->
+  <path fill="#000000" d="M 40,92 L 40,56 C 40,47.16 47.16,40 56,40 L 92,40 L 92,62 L 62,62 L 62,92 Z"/>
+  <!-- Top-Right Focus Bracket -->
+  <path fill="#000000" d="M 164,40 L 200,40 C 208.84,40 216,47.16 216,56 L 216,92 L 194,92 L 194,62 L 164,62 Z"/>
+  <!-- Bottom-Left Focus Bracket -->
+  <path fill="#000000" d="M 40,164 L 40,200 C 40,208.84 47.16,216 56,216 L 92,216 L 92,194 L 62,194 L 62,164 Z"/>
+  <!-- Bottom-Right Focus Bracket -->
+  <path fill="#000000" d="M 164,216 L 200,216 C 208.84,216 216,208.84 216,200 L 216,164 L 194,164 L 194,194 L 164,194 Z"/>
+  <!-- Center: Bold Fixation Core (The Fixation Point) -->
+  <circle cx="106" cy="128" r="32" fill="#000000"/>
+  <!-- Forward Saccade Indicator: Clean Kinetic Arrow -->
+  <polygon points="146,104 176,128 146,152 158,128" fill="#000000"/>
+</svg>

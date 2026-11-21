@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title-b">
+  <title id="title-b">The Guided Saccade - Bionic Eye</title>
+  <!-- Outer Eyelid Frame (Generous, balanced arcs) -->
+  <path fill="#000000" fill-rule="evenodd" d="
+    M 24,128
+    C 52,36 204,36 232,128
+    C 204,220 52,220 24,128 Z
+    M 54,128
+    C 76,68 180,68 202,128
+    C 180,188 76,188 54,128 Z
+  "/>
+  <!-- Floating Focal Iris with Negative-Space Forward Arrow -->
+  <path fill="#000000" fill-rule="evenodd" d="
+    M 128,86
+    A 42,42 0 1 1 127.9,86 Z
+    M 116,104
+    L 144,128
+    L 116,152
+    L 128,152
+    L 156,128
+    L 128,104 Z
+  "/>
+</svg>

@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "ADHD Bionic Reader",
+  "version": "1.2.0",
+  "description": "High-performance reading assistant for ADHD and neurodivergent minds using the Bionic Reading method, distraction reduction, and reader view.",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "contextMenus"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "adhd-bionic-reader@speakthat.local",
+      "strict_min_version": "109.0"
+    }
+  },
+  "action": {
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    },
+    "default_popup": "popup.html",
+    "default_title": "ADHD Bionic Reader"
+  },
+  "commands": {
+    "toggle-bionic": {
+      "suggested_key": {
+        "default": "Alt+B"
+      },
+      "description": "Toggle Bionic Reading Mode"
+    },
+    "toggle-reader": {
+      "suggested_key": {
+        "default": "Alt+R"
+      },
+      "description": "Toggle Distraction-Free Reader View"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["darkreader.js", "Readability.js", "content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}
