@@ -10,7 +10,9 @@ const DEFAULT_SETTINGS = {
   hcEnabled: false,
   nightLightEnabled: false,
   adhdEnabled: false,
-  readerModeEnabled: false
+  readerModeEnabled: false,
+  readerTheme: 'auto',
+  readerFontSize: 19
 };
 
 let currentSettings = { ...DEFAULT_SETTINGS };
@@ -96,6 +98,11 @@ async function init() {
     if (adhdToggle) adhdToggle.checked = settings.adhdEnabled || false;
     if (readerToggle) readerToggle.checked = settings.readerModeEnabled || false;
 
+    // Hydrate reader theme radio buttons
+    const readerTheme = settings.readerTheme || 'auto';
+    const readerThemeRadio = document.querySelector(`input[name="reader-theme"][value="${readerTheme}"]`);
+    if (readerThemeRadio) readerThemeRadio.checked = true;
+
     updateBlacklistBtnUI(settings.blacklist.includes(currentHostname));
   });
 
@@ -174,6 +181,17 @@ async function init() {
     currentSettings.readerModeEnabled = e.target.checked;
     queueSaveSettings();
   });
+
+  // Reader Theme Radio Buttons
+  const readerThemeRadios = document.querySelectorAll('input[name="reader-theme"]');
+  if (readerThemeRadios) {
+    readerThemeRadios.forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        currentSettings.readerTheme = e.target.value;
+        queueSaveSettings();
+      });
+    });
+  }
 
   // Tab Switching Logic
   const tabBtns = document.querySelectorAll('.tab-btn');
