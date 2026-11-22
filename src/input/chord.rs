@@ -94,6 +94,22 @@ impl InputChord {
     pub fn total_keys_count(&self) -> usize {
         self.modifiers.len() + 1
     }
+
+    /// Checks if this chord matches another chord regardless of modifier order
+    pub fn matches(&self, other: &InputChord) -> bool {
+        if self.trigger != other.trigger {
+            return false;
+        }
+        if self.modifiers.len() != other.modifiers.len() {
+            return false;
+        }
+        for m in &self.modifiers {
+            if !other.modifiers.contains(m) {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 impl fmt::Display for InputChord {

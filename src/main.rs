@@ -19,8 +19,7 @@ use downloader::ModelDownloader;
 use input::{HookEvent, InputHookManager, ShortcutCatalog, TextInjector};
 use ui::BrowserDetector;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Initialize logging
     tracing_subscriber::fmt()
         .with_env_filter("info,speakthat=debug")
@@ -71,9 +70,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("    Install helper: {}", b.install_url);
     }
 
-    // 5. Initialize Audio & Bionic Engines
+    // 5. Build Tokio runtime for background workers
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    let _guard = rt.enter();
+
+    // 6. Initialize Audio & Bionic Engines
     let stt_installed = ModelDownloader::is_model_installed();
-    info!("Speech-to-Text (Parakeet-TDT 0.6B) Model Status: {}", if stt_installed { "Installed" } else { "Not Installed (On-Demand in-app download available)" });
+    info!(
+        "Speech-to-Text (Parakeet-TDT 0.6B) Model Status: {}",
+        if stt_installed { "Installed" } else { "Not Installed (On-Demand in-app download available)" }
+    );
 
     let (tts_engine, _tts_rx) = TtsEngine::new();
     let (mic_manager, _ptt_rx, _duck_rx) = MicrophoneManager::new();
@@ -90,41 +98,119 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _stt_engine = Arc::new(stt_engine);
     let bionic_engine = Arc::new(bionic_engine);
 
-    // 6. Initialize Low-Level Input Hooks
+    // 7. Initialize Low-Level Input Hooks
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<HookEvent>();
     let hook_mgr = Arc::new(InputHookManager::new(event_tx));
     let _hook_handle = hook_mgr.start_listening();
     info!("Low-level Windows keyboard and mouse hooks initialized.");
 
-    // 7. Initialize Windows System Tray Icon
-    let tray_cfg = config.clone();
+    // 8. Spawn background event receiver loop in Tokio
+    let loop_config = config.clone();
+    let loop_tts = Arc::clone(&tts_engine);
+    let loop_bionic = Arc::clone(&bionic_engine);
+    let loop_mic = Arc::clone(&mic_manager);
+
+    rt.spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            match event {
+                HookEvent::ChordTriggered(chord) => {
+                    info!("Hook event received chord: {}", chord);
+
+                    if chord.matches(&loop_config.shortcuts.speak_selection) {
+                        info!("🔥 [HOTKEY MATCHED] Speak Selection: {}", chord);
+                        let tts = Arc::clone(&loop_tts);
+                        tokio::spawn(async move {
+                            match SelectionCapture::capture_selected_text_synthetic(Duration::from_millis(150)).await {
+                                Ok(text) => {
+                                    info!("Captured selected text: {} chars", text.len());
+                                    tts.speak(&text);
+                                }
+                                Err(e) => {
+                                    warn!("Could not capture selection: {}", e);
+                                }
+                            }
+                        });
+                    } else if chord.matches(&loop_config.shortcuts.toggle_bionic) {
+                        info!("🔥 [HOTKEY MATCHED] Native Bionic In-Place Transformation: {}", chord);
+                        let engine = Arc::clone(&loop_bionic);
+                        tokio::spawn(async move {
+                            match SelectionCapture::capture_selected_text_synthetic(Duration::from_millis(150)).await {
+                                Ok(text) => {
+                                    let bionic_text = engine.to_unicode_bionic(&text);
+                                    info!("Transformed {} chars to native Bionic Unicode format", bionic_text.len());
+                                    if let Err(e) = TextInjector::inject_text(&bionic_text) {
+                                        warn!("Failed to inject bionic text: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Could not capture selection for Bionic reading: {}", e);
+                                }
+                            }
+                        });
+                    } else if chord.matches(&loop_config.shortcuts.open_home) {
+                        info!("🔥 [HOTKEY MATCHED] Open Home Dashboard: {}", chord);
+                    } else if chord.matches(&loop_config.shortcuts.toggle_reader) {
+                        info!("🔥 [HOTKEY MATCHED] Native Reader View: {}", chord);
+                        let tts = Arc::clone(&loop_tts);
+                        let ratio = loop_config.bionic.fixation_ratio;
+                        tokio::spawn(async move {
+                            let text = match SelectionCapture::capture_selected_text_synthetic(Duration::from_millis(150)).await {
+                                Ok(t) if !t.trim().is_empty() => t,
+                                _ => "Highlight any text in any Windows app and press Alt+R to open it here in clean, distraction-free reader mode.\n\nYou can switch themes (Dark, OLED Black, Sepia, Light), scale font size, toggle Bionic reading, or listen aloud with neural speech.".to_string(),
+                            };
+
+                            std::thread::spawn(move || {
+                                let native_options = eframe::NativeOptions {
+                                    viewport: eframe::egui::ViewportBuilder::default()
+                                        .with_inner_size([800.0, 600.0])
+                                        .with_min_inner_size([500.0, 400.0]),
+                                    ..Default::default()
+                                };
+                                let _ = eframe::run_native(
+                                    "SpeakThat Native Reader View",
+                                    native_options,
+                                    Box::new(move |_cc| Box::new(ui::ReaderViewWindow::new(text, tts, ratio))),
+                                );
+                            });
+                        });
+                    } else if chord.matches(&loop_config.shortcuts.push_to_talk) {
+                        info!("🔥 [HOTKEY MATCHED] Push-to-Talk Dictation: {}", chord);
+                        loop_mic.on_ptt_press();
+                    } else {
+                        tracing::debug!("Key chord '{}' received (no shortcut match)", chord);
+                    }
+                }
+                HookEvent::SideButtonHoldStart(btn) => {
+                    info!("🔥 [MOUSE SIDE BUTTON] Button {} pressed (Push-to-Talk listening...)", btn);
+                    loop_mic.on_ptt_press();
+                }
+                HookEvent::SideButtonHoldEnd(btn, duration) => {
+                    info!(
+                        "🔥 [MOUSE SIDE BUTTON] Button {} released after {}ms",
+                        btn,
+                        duration.as_millis()
+                    );
+                    loop_mic.on_ptt_release();
+                }
+            }
+        }
+    });
+
+    // 9. Initialize Windows System Tray Icon
     let tray_tts = Arc::clone(&tts_engine);
     let tray_bionic = Arc::clone(&bionic_engine);
-    ui::TrayManager::spawn(move |action| match action {
-        ui::IDM_OPEN_DASHBOARD => {
-            let cfg = tray_cfg.clone();
-            let tts = Arc::clone(&tray_tts);
-            std::thread::spawn(move || {
-                let native_options = eframe::NativeOptions {
-                    viewport: eframe::egui::ViewportBuilder::default()
-                        .with_inner_size([740.0, 540.0])
-                        .with_min_inner_size([620.0, 420.0]),
-                    ..Default::default()
-                };
-                let _ = eframe::run_native(
-                    "SpeakThat Settings Dashboard",
-                    native_options,
-                    Box::new(|_cc| Box::new(ui::SettingsDashboard::new(cfg, tts))),
-                );
-            });
-        }
+    let _tray = ui::TrayManager::spawn(move |action| match action {
+        ui::IDM_OPEN_DASHBOARD => {}
         ui::IDM_TOGGLE_BIONIC => {
             let engine = Arc::clone(&tray_bionic);
-            tokio::spawn(async move {
-                if let Ok(text) = SelectionCapture::capture_selected_text_synthetic(Duration::from_millis(150)).await {
-                    let bionic_text = engine.to_unicode_bionic(&text);
-                    let _ = TextInjector::inject_text(&bionic_text);
-                }
+            let _ = std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async {
+                    if let Ok(text) = SelectionCapture::capture_selected_text_synthetic(Duration::from_millis(150)).await {
+                        let bionic_text = engine.to_unicode_bionic(&text);
+                        let _ = TextInjector::inject_text(&bionic_text);
+                    }
+                });
             });
         }
         ui::IDM_STOP_SPEECH => {
@@ -136,105 +222,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => {}
     });
 
-    info!("Application successfully initialized in background. Ready for input.");
+    info!("Application background services initialized. Launching egui Settings Dashboard on main thread...");
 
-    // Event loop receiving chord triggers and side mouse events
-    while let Some(event) = event_rx.recv().await {
-        match event {
-            HookEvent::ChordTriggered(chord) => {
-                info!("Chord triggered: {}", chord);
+    // 10. Run egui Dashboard on the Main Thread (guaranteed visible window on Windows)
+    let native_options = eframe::NativeOptions {
+        viewport: eframe::egui::ViewportBuilder::default()
+            .with_inner_size([760.0, 560.0])
+            .with_min_inner_size([620.0, 420.0]),
+        ..Default::default()
+    };
 
-                if chord == config.shortcuts.speak_selection {
-                    info!("Action: Speak Selection triggered");
-                    let tts = Arc::clone(&tts_engine);
-                    tokio::spawn(async move {
-                        match SelectionCapture::capture_selected_text_synthetic(Duration::from_millis(150)).await {
-                            Ok(text) => {
-                                info!("Captured selected text: {} chars", text.len());
-                                tts.speak(&text);
-                            }
-                            Err(e) => {
-                                warn!("Could not capture selection: {}", e);
-                            }
-                        }
-                    });
-                } else if chord == config.shortcuts.toggle_bionic {
-                    info!("Action: Native Windows Bionic In-Place Transformation triggered");
-                    let engine = Arc::clone(&bionic_engine);
-                    tokio::spawn(async move {
-                        match SelectionCapture::capture_selected_text_synthetic(Duration::from_millis(150)).await {
-                            Ok(text) => {
-                                let bionic_text = engine.to_unicode_bionic(&text);
-                                info!("Transformed {} chars to native Bionic Unicode format", bionic_text.len());
-                                if let Err(e) = TextInjector::inject_text(&bionic_text) {
-                                    warn!("Failed to inject bionic text: {}", e);
-                                }
-                            }
-                            Err(e) => {
-                                warn!("Could not capture selection for Bionic reading: {}", e);
-                            }
-                        }
-                    });
-                } else if chord == config.shortcuts.open_home {
-                    info!("Action: Open Home Dashboard triggered");
-                    let cfg = config.clone();
-                    let tts = Arc::clone(&tts_engine);
-                    std::thread::spawn(move || {
-                        let native_options = eframe::NativeOptions {
-                            viewport: eframe::egui::ViewportBuilder::default()
-                                .with_inner_size([740.0, 540.0])
-                                .with_min_inner_size([620.0, 420.0]),
-                            ..Default::default()
-                        };
-                        let _ = eframe::run_native(
-                            "SpeakThat Settings Dashboard",
-                            native_options,
-                            Box::new(|_cc| Box::new(ui::SettingsDashboard::new(cfg, tts))),
-                        );
-                    });
-                } else if chord == config.shortcuts.toggle_reader {
-                    info!("Action: Native Reader View triggered");
-                    let tts = Arc::clone(&tts_engine);
-                    let ratio = config.bionic.fixation_ratio;
-                    tokio::spawn(async move {
-                        let text = match SelectionCapture::capture_selected_text_synthetic(Duration::from_millis(150)).await {
-                            Ok(t) if !t.trim().is_empty() => t,
-                            _ => "Highlight any text in any Windows app and press Alt+R to open it here in clean, distraction-free reader mode.\n\nYou can switch themes (Dark, OLED Black, Sepia, Light), scale font size, toggle Bionic reading, or listen aloud with neural speech.".to_string(),
-                        };
-
-                        std::thread::spawn(move || {
-                            let native_options = eframe::NativeOptions {
-                                viewport: eframe::egui::ViewportBuilder::default()
-                                    .with_inner_size([800.0, 600.0])
-                                    .with_min_inner_size([500.0, 400.0]),
-                                ..Default::default()
-                            };
-                            let _ = eframe::run_native(
-                                "SpeakThat Native Reader View",
-                                native_options,
-                                Box::new(move |_cc| Box::new(ui::ReaderViewWindow::new(text, tts, ratio))),
-                            );
-                        });
-                    });
-                } else if chord == config.shortcuts.push_to_talk {
-                    info!("Action: Push-to-Talk triggered via keyboard shortcut");
-                    mic_manager.on_ptt_press();
-                }
-            }
-            HookEvent::SideButtonHoldStart(btn) => {
-                info!("Side mouse button {} pressed (Push-to-Talk listening...)", btn);
-                mic_manager.on_ptt_press();
-            }
-            HookEvent::SideButtonHoldEnd(btn, duration) => {
-                info!(
-                    "Side mouse button {} released after {}ms",
-                    btn,
-                    duration.as_millis()
-                );
-                mic_manager.on_ptt_release();
-            }
-        }
-    }
+    let gui_config = config.clone();
+    let gui_tts = Arc::clone(&tts_engine);
+    eframe::run_native(
+        "SpeakThat Settings Dashboard",
+        native_options,
+        Box::new(move |_cc| Box::new(ui::SettingsDashboard::new(gui_config, gui_tts))),
+    ).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
 
     Ok(())
 }

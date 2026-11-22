@@ -121,8 +121,14 @@ impl TtsEngine {
         )
     }
 
+    fn find_project_root() -> PathBuf {
+        crate::ui::BrowserDetector::find_project_root()
+    }
+
     fn find_python_path() -> PathBuf {
+        let root = Self::find_project_root();
         let candidates = [
+            root.join(".venv\\Scripts\\python.exe"),
             PathBuf::from("E:\\Speak-That-Windows\\.venv\\Scripts\\python.exe"),
             PathBuf::from(".venv\\Scripts\\python.exe"),
             PathBuf::from("python.exe"),
@@ -137,7 +143,9 @@ impl TtsEngine {
     }
 
     fn find_worker_path() -> PathBuf {
+        let root = Self::find_project_root();
         let candidates = [
+            root.join("src\\audio\\tts_worker.py"),
             PathBuf::from("E:\\Speak-That-Windows\\src\\audio\\tts_worker.py"),
             PathBuf::from("src\\audio\\tts_worker.py"),
             PathBuf::from("tts_worker.py"),

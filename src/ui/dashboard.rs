@@ -232,7 +232,7 @@ impl eframe::App for SettingsDashboard {
                                         EditingShortcut::ToggleBionic => self.config.shortcuts.toggle_bionic = draft_chord,
                                         EditingShortcut::ToggleReader => self.config.shortcuts.toggle_reader = draft_chord,
                                     }
-                                    self.config.save();
+                                    let _ = self.config.save();
                                     self.editing_shortcut = None;
                                     self.status_message = Some("Shortcut updated and saved.".to_string());
                                 }
@@ -430,7 +430,7 @@ impl eframe::App for SettingsDashboard {
             ui.separator();
             ui.horizontal(|ui| {
                 if ui.button("💾 Save Settings").clicked() {
-                    self.config.save();
+                    let _ = self.config.save();
                     self.status_message = Some("Settings saved successfully.".to_string());
                 }
                 if let Some(msg) = &self.status_message {

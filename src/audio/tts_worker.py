@@ -9,25 +9,40 @@ root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
+# Save IPC stdout and redirect general stdout to stderr to protect JSON IPC protocol
+ipc_stdout = sys.stdout
+sys.stdout = sys.stderr
+
+try:
+    sys.stdin.reconfigure(line_buffering=True)
+except Exception:
+    pass
+
 from speak_that.engine import TTSEngine
 
 def main():
-    sys.stdout.reconfigure(line_buffering=True)
-    sys.stdin.reconfigure(line_buffering=True)
-
     engine = TTSEngine(voice="bf_isabella", speed=1.05, volume=1.0)
 
     def on_status_change(status):
-        sys.stdout.write(json.dumps({"event": "status", "data": status}) + "\n")
-        sys.stdout.flush()
+        try:
+            ipc_stdout.write(json.dumps({"event": "status", "data": status}) + "\n")
+            ipc_stdout.flush()
+        except Exception:
+            pass
 
     def on_sentence(sentence):
-        sys.stdout.write(json.dumps({"event": "sentence", "data": sentence}) + "\n")
-        sys.stdout.flush()
+        try:
+            ipc_stdout.write(json.dumps({"event": "sentence", "data": sentence}) + "\n")
+            ipc_stdout.flush()
+        except Exception:
+            pass
 
     def on_complete():
-        sys.stdout.write(json.dumps({"event": "complete"}) + "\n")
-        sys.stdout.flush()
+        try:
+            ipc_stdout.write(json.dumps({"event": "complete"}) + "\n")
+            ipc_stdout.flush()
+        except Exception:
+            pass
 
     engine.on_status_change = on_status_change
     engine.on_sentence = on_sentence
@@ -38,8 +53,11 @@ def main():
         import time
         time.sleep(0.05)
 
-    sys.stdout.write(json.dumps({"event": "ready", "voices": engine.get_voices()}) + "\n")
-    sys.stdout.flush()
+    try:
+        ipc_stdout.write(json.dumps({"event": "ready", "voices": engine.get_voices()}) + "\n")
+        ipc_stdout.flush()
+    except Exception:
+        pass
 
     for line in sys.stdin:
         line = line.strip()
@@ -71,11 +89,15 @@ def main():
             elif cmd == "set_volume":
                 engine.set_volume(float(req.get("volume", 1.0)))
             elif cmd == "ping":
-                sys.stdout.write(json.dumps({"event": "pong"}) + "\n")
-                sys.stdout.flush()
+                ipc_stdout.write(json.dumps({"event": "pong"}) + "\n")
+                ipc_stdout.flush()
         except Exception as e:
-            sys.stdout.write(json.dumps({"event": "error", "error": str(e)}) + "\n")
-            sys.stdout.flush()
+            try:
+                ipc_stdout.write(json.dumps({"event": "error", "error": str(e)}) + "\n")
+                ipc_stdout.flush()
+            except Exception:
+                pass
 
 if __name__ == "__main__":
+    main()
     main()
