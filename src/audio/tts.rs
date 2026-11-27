@@ -1,114 +1,232 @@
+use ort::session::Session;
+use ort::value::Tensor;
+use rodio::buffer::SamplesBuffer;
+use rodio::{OutputStream, Sink};
 use std::path::PathBuf;
-use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, watch};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use crate::audio::g2p::MisakiG2p;
+use crate::ui::BrowserDetector;
+
+const PARADEE_SAMPLE_RATE: u32 = 24_000;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlaybackState {
     Stopped,
     Playing,
     Paused,
 }
 
+enum TtsCommand {
+    Speak { job_id: u64, text: String },
+    Stop,
+    TogglePause,
+}
+
 pub struct TtsEngine {
     state_tx: watch::Sender<PlaybackState>,
     is_paused: Arc<AtomicBool>,
-    cmd_tx: mpsc::UnboundedSender<String>,
+    cmd_tx: mpsc::UnboundedSender<TtsCommand>,
+    active_job_id: Arc<AtomicU64>,
+    voice: Arc<Mutex<String>>,
+    speed_bits: Arc<AtomicU32>,
+    volume_bits: Arc<AtomicU32>,
+    active_sink: Arc<Mutex<Option<Arc<Sink>>>>,
 }
 
 impl TtsEngine {
     pub fn new() -> (Self, watch::Receiver<PlaybackState>) {
         let (state_tx, state_rx) = watch::channel(PlaybackState::Stopped);
         let is_paused = Arc::new(AtomicBool::new(false));
-        let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<String>();
+        let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<TtsCommand>();
+        let active_job_id = Arc::new(AtomicU64::new(0));
+        let voice = Arc::new(Mutex::new("bf_isabella".to_string()));
+        let speed_bits = Arc::new(AtomicU32::new(1.05_f32.to_bits()));
+        let volume_bits = Arc::new(AtomicU32::new(1.0_f32.to_bits()));
+        let active_sink: Arc<Mutex<Option<Arc<Sink>>>> = Arc::new(Mutex::new(None));
 
-        let state_tx_clone = state_tx.clone();
-        let is_paused_clone = Arc::clone(&is_paused);
+        let state_tx_worker = state_tx.clone();
+        let is_paused_worker = Arc::clone(&is_paused);
+        let job_id_worker = Arc::clone(&active_job_id);
+        let voice_worker = Arc::clone(&voice);
+        let speed_worker = Arc::clone(&speed_bits);
+        let volume_worker = Arc::clone(&volume_bits);
+        let sink_worker = Arc::clone(&active_sink);
 
-        // Spawn background worker process
-        tokio::spawn(async move {
-            let python_path = Self::find_python_path();
-            let worker_path = Self::find_worker_path();
-
-            info!("Starting Paradee TTS Worker: {:?} with script {:?}", python_path, worker_path);
-
-            let mut child = match Command::new(&python_path)
-                .arg(&worker_path)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::inherit())
-                .spawn()
-            {
-                Ok(c) => c,
+        // Pure-Rust ONNX + Misaki G2P + Rodio WASAPI playback thread (zero Python)
+        std::thread::spawn(move || {
+            let g2p = match MisakiG2p::load_embedded() {
+                Ok(g) => {
+                    info!("Loaded embedded Misaki English US+GB G2P lexicons.");
+                    g
+                }
                 Err(e) => {
-                    error!("Failed to spawn Paradee TTS worker: {e}");
+                    error!("Failed to load Misaki G2P: {e}");
                     return;
                 }
             };
 
-            let mut stdin = child.stdin.take().expect("Failed to open worker stdin");
-            let stdout = child.stdout.take().expect("Failed to open worker stdout");
-
-            // Worker stdin writer loop
-            tokio::spawn(async move {
-                while let Some(msg) = cmd_rx.recv().await {
-                    let mut data = msg.into_bytes();
-                    data.push(b'\n');
-                    if let Err(e) = stdin.write_all(&data).await {
-                        warn!("Error writing command to TTS worker stdin: {e}");
-                        break;
+            let dll_path = Self::find_onnxruntime_dll();
+            info!("Initializing native ONNX Runtime from: {:?}", dll_path);
+            let env = match ort::init_from(&dll_path) {
+                Ok(builder) => match builder.with_name("SpeakThat").build() {
+                    Ok(e) => e,
+                    Err(err) => {
+                        error!("Failed to build ONNX Runtime environment: {err}");
+                        return;
                     }
-                    if let Err(e) = stdin.flush().await {
-                        warn!("Error flushing TTS worker stdin: {e}");
-                        break;
+                },
+                Err(e) => {
+                    error!("Failed to dynamically load onnxruntime.dll ({dll_path:?}): {e}");
+                    return;
+                }
+            };
+
+            let model_path = Self::find_model_path();
+            info!("Loading Paradee 8M INT8 model: {:?}", model_path);
+            let mut session = match Session::builder(&env) {
+                Ok(b) => match b.with_intra_threads(1) {
+                    Ok(mut b2) => match b2.commit_from_file(&model_path) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            error!("Failed to load Paradee ONNX model ({model_path:?}): {e}");
+                            return;
+                        }
+                    },
+                    Err(e) => {
+                        error!("Failed to configure ORT intra threads: {e}");
+                        return;
                     }
+                },
+                Err(e) => {
+                    error!("Failed to create ORT SessionBuilder: {e}");
+                    return;
                 }
-            });
+            };
 
-            // Worker stdout reader loop
-            let mut reader = BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = reader.next_line().await {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
+            // Warmup tiny inference to prime JIT/ONNX graph
+            let _ = Self::run_inference(&mut session, &g2p, "Ready.", "bf_isabella", 1.0);
+            info!("Pure-Rust Paradee 8M ONNX TTS engine is initialized and ready (zero Python).");
+
+            // Initialize native Windows audio output stream once on worker thread
+            let stream_tuple = match OutputStream::try_default() {
+                Ok(st) => st,
+                Err(e) => {
+                    error!("Failed to open default audio output device: {e}");
+                    return;
                 }
+            };
+            let (_stream, stream_handle) = stream_tuple;
 
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                    if let Some(event) = val.get("event").and_then(|v| v.as_str()) {
-                        match event {
-                            "ready" => {
-                                info!("Paradee 8M TTS engine is initialized and ready for real-time speech!");
+            while let Some(cmd) = cmd_rx.blocking_recv() {
+                match cmd {
+                    TtsCommand::Speak { job_id, text } => {
+                        if job_id != job_id_worker.load(Ordering::SeqCst) {
+                            continue;
+                        }
+
+                        // Stop any existing sink immediately
+                        if let Ok(mut guard) = sink_worker.lock() {
+                            if let Some(prev) = guard.take() {
+                                prev.stop();
                             }
-                            "sentence" => {
-                                let sentence = val.get("data").and_then(|v| v.as_str()).unwrap_or("");
-                                info!("Paradee speaking sentence: \"{}\"", sentence);
-                                is_paused_clone.store(false, Ordering::SeqCst);
-                                let _ = state_tx_clone.send(PlaybackState::Playing);
+                        }
+
+                        let sink = match Sink::try_new(&stream_handle) {
+                            Ok(s) => Arc::new(s),
+                            Err(e) => {
+                                error!("Failed to create audio sink: {e}");
+                                continue;
                             }
-                            "complete" => {
-                                info!("Paradee playback completed");
-                                is_paused_clone.store(false, Ordering::SeqCst);
-                                let _ = state_tx_clone.send(PlaybackState::Stopped);
+                        };
+                        sink.set_volume(f32::from_bits(volume_worker.load(Ordering::SeqCst)));
+
+                        if let Ok(mut guard) = sink_worker.lock() {
+                            *guard = Some(Arc::clone(&sink));
+                        }
+
+                        is_paused_worker.store(false, Ordering::SeqCst);
+                        let _ = state_tx_worker.send(PlaybackState::Playing);
+
+                        let sentences = MisakiG2p::split_sentences(&text);
+                        for sentence in sentences {
+                            if job_id != job_id_worker.load(Ordering::SeqCst) {
+                                sink.stop();
+                                break;
                             }
-                            "status" => {
-                                let st = val.get("data").and_then(|v| v.as_str()).unwrap_or("");
-                                debug!("TTS worker status: {}", st);
+
+                            let cur_voice = voice_worker
+                                .lock()
+                                .map(|g| g.clone())
+                                .unwrap_or_else(|_| "bf_isabella".to_string());
+                            let cur_speed =
+                                f32::from_bits(speed_worker.load(Ordering::SeqCst)).clamp(0.5, 2.5);
+
+                            info!("Paradee synthesizing sentence ({cur_voice} @ {cur_speed:.2}x): \"{sentence}\"");
+                            match Self::run_inference(
+                                &mut session,
+                                &g2p,
+                                &sentence,
+                                &cur_voice,
+                                cur_speed,
+                            ) {
+                                Ok(samples) if !samples.is_empty() => {
+                                    if job_id != job_id_worker.load(Ordering::SeqCst) {
+                                        sink.stop();
+                                        break;
+                                    }
+                                    sink.append(SamplesBuffer::new(1, PARADEE_SAMPLE_RATE, samples));
+                                }
+                                Ok(_) => {}
+                                Err(e) => {
+                                    error!("Paradee inference error: {e}");
+                                }
                             }
-                            "error" => {
-                                let err = val.get("error").and_then(|v| v.as_str()).unwrap_or("");
-                                error!("TTS worker reported error: {}", err);
+                        }
+
+                        // Wait cleanly while audio finishes unless interrupted by Stop or new Speak job
+                        while !sink.empty() {
+                            if job_id != job_id_worker.load(Ordering::SeqCst) {
+                                sink.stop();
+                                break;
                             }
-                            _ => {}
+                            std::thread::sleep(std::time::Duration::from_millis(25));
+                        }
+
+                        if job_id == job_id_worker.load(Ordering::SeqCst) {
+                            is_paused_worker.store(false, Ordering::SeqCst);
+                            let _ = state_tx_worker.send(PlaybackState::Stopped);
+                        }
+                    }
+                    TtsCommand::Stop => {
+                        if let Ok(mut guard) = sink_worker.lock() {
+                            if let Some(prev) = guard.take() {
+                                prev.stop();
+                            }
+                        }
+                        is_paused_worker.store(false, Ordering::SeqCst);
+                        let _ = state_tx_worker.send(PlaybackState::Stopped);
+                    }
+                    TtsCommand::TogglePause => {
+                        if let Ok(guard) = sink_worker.lock() {
+                            if let Some(ref s) = *guard {
+                                if s.is_paused() {
+                                    s.play();
+                                    is_paused_worker.store(false, Ordering::SeqCst);
+                                    let _ = state_tx_worker.send(PlaybackState::Playing);
+                                } else {
+                                    s.pause();
+                                    is_paused_worker.store(true, Ordering::SeqCst);
+                                    let _ = state_tx_worker.send(PlaybackState::Paused);
+                                }
+                            }
                         }
                     }
                 }
             }
-
-            warn!("Paradee TTS worker process terminated.");
         });
 
         (
@@ -116,105 +234,163 @@ impl TtsEngine {
                 state_tx,
                 is_paused,
                 cmd_tx,
+                active_job_id,
+                voice,
+                speed_bits,
+                volume_bits,
+                active_sink,
             },
             state_rx,
         )
     }
 
-    fn find_project_root() -> PathBuf {
-        crate::ui::BrowserDetector::find_project_root()
+    fn run_inference(
+        session: &mut Session,
+        g2p: &MisakiG2p,
+        sentence: &str,
+        voice: &str,
+        speed: f32,
+    ) -> Result<Vec<f32>, String> {
+        let british = voice.starts_with('b');
+        let voice_idx = g2p.voice_index(voice);
+        let chunks = g2p.text_to_token_chunks(sentence, british);
+        let mut all_samples = Vec::new();
+
+        for ids in chunks {
+            let token_len = ids.len();
+            let ids_tensor = Tensor::from_array(([1usize, token_len], ids))
+                .map_err(|e| format!("input_ids tensor error: {e}"))?;
+            let speed_tensor = Tensor::from_array(([1usize], vec![speed]))
+                .map_err(|e| format!("speed tensor error: {e}"))?;
+            let voice_tensor = Tensor::from_array(([1usize], vec![voice_idx]))
+                .map_err(|e| format!("voice tensor error: {e}"))?;
+
+            let outputs = session
+                .run(ort::inputs![
+                    "input_ids" => ids_tensor,
+                    "speed" => speed_tensor,
+                    "voice" => voice_tensor
+                ])
+                .map_err(|e| format!("ORT run error: {e}"))?;
+
+            let (_shape, audio) = outputs[0]
+                .try_extract_tensor::<f32>()
+                .map_err(|e| format!("waveform extract error: {e}"))?;
+            all_samples.extend_from_slice(audio);
+        }
+
+        debug!("Paradee synthesized {} audio samples @ 24kHz", all_samples.len());
+        Ok(all_samples)
     }
 
-    fn find_python_path() -> PathBuf {
-        let root = Self::find_project_root();
-        let candidates = [
-            root.join(".venv\\Scripts\\python.exe"),
-            PathBuf::from("E:\\Speak-That-Windows\\.venv\\Scripts\\python.exe"),
-            PathBuf::from(".venv\\Scripts\\python.exe"),
-            PathBuf::from("python.exe"),
-        ];
-
-        for c in &candidates {
-            if c.exists() {
-                return c.clone();
+    /// Resolves `onnxruntime.dll` relative to current_exe() (packaged release) or dev tree.
+    pub fn find_onnxruntime_dll() -> PathBuf {
+        let mut candidates = Vec::new();
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                candidates.push(dir.join("onnxruntime.dll"));
+                candidates.push(dir.join("lib").join("onnxruntime.dll"));
             }
         }
-        PathBuf::from("python")
-    }
+        let root = BrowserDetector::find_project_root();
+        candidates.push(
+            root.join(".venv")
+                .join("Lib")
+                .join("site-packages")
+                .join("onnxruntime")
+                .join("capi")
+                .join("onnxruntime.dll"),
+        );
 
-    fn find_worker_path() -> PathBuf {
-        let root = Self::find_project_root();
-        let candidates = [
-            root.join("src\\audio\\tts_worker.py"),
-            PathBuf::from("E:\\Speak-That-Windows\\src\\audio\\tts_worker.py"),
-            PathBuf::from("src\\audio\\tts_worker.py"),
-            PathBuf::from("tts_worker.py"),
-        ];
-
-        for c in &candidates {
-            if c.exists() {
-                return c.clone();
+        for c in candidates {
+            if c.is_file() {
+                return c;
             }
         }
-        PathBuf::from("src\\audio\\tts_worker.py")
+        PathBuf::from("onnxruntime.dll")
     }
 
-    /// Speak text using the Paradee 8M TTS model
+    /// Resolves `paradee_int8.onnx` relative to current_exe() (packaged release `./models/`) or dev tree.
+    pub fn find_model_path() -> PathBuf {
+        let mut candidates = Vec::new();
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                candidates.push(dir.join("models").join("paradee_int8.onnx"));
+                candidates.push(dir.join("paradee_int8.onnx"));
+            }
+        }
+        let root = BrowserDetector::find_project_root();
+        candidates.push(root.join("speak_that").join("model").join("paradee_int8.onnx"));
+        candidates.push(PathBuf::from("models").join("paradee_int8.onnx"));
+        candidates.push(PathBuf::from("speak_that").join("model").join("paradee_int8.onnx"));
+
+        for c in candidates {
+            if c.is_file() {
+                return c;
+            }
+        }
+        PathBuf::from("models").join("paradee_int8.onnx")
+    }
+
+    /// Speak text using the native Rust Paradee 8M TTS model
     pub fn speak(&self, text: &str) {
         if text.trim().is_empty() {
             return;
         }
-
-        info!("Sending speak request to Paradee engine: {} chars", text.len());
-        let req = serde_json::json!({
-            "cmd": "speak",
-            "text": text,
+        let next_id = self.active_job_id.fetch_add(1, Ordering::SeqCst) + 1;
+        // Stop any current playback immediately before queuing the new job
+        if let Ok(mut guard) = self.active_sink.lock() {
+            if let Some(prev) = guard.take() {
+                prev.stop();
+            }
+        }
+        info!("Sending speak request to native Paradee engine: {} chars", text.len());
+        let _ = self.cmd_tx.send(TtsCommand::Speak {
+            job_id: next_id,
+            text: text.to_string(),
         });
-
-        let _ = self.cmd_tx.send(req.to_string());
-        self.is_paused.store(false, Ordering::SeqCst);
-        let _ = self.state_tx.send(PlaybackState::Playing);
     }
 
     /// Stop playback immediately
     pub fn stop(&self) {
         info!("Stopping Paradee playback");
-        let req = serde_json::json!({ "cmd": "stop" });
-        let _ = self.cmd_tx.send(req.to_string());
+        self.active_job_id.fetch_add(1, Ordering::SeqCst);
+        if let Ok(mut guard) = self.active_sink.lock() {
+            if let Some(prev) = guard.take() {
+                prev.stop();
+            }
+        }
         self.is_paused.store(false, Ordering::SeqCst);
         let _ = self.state_tx.send(PlaybackState::Stopped);
+        let _ = self.cmd_tx.send(TtsCommand::Stop);
     }
 
     /// Toggle pause / resume
+    #[allow(dead_code)]
     pub fn toggle_pause(&self) {
-        let paused = self.is_paused.fetch_xor(true, Ordering::SeqCst);
-        let cmd = if !paused { "pause" } else { "resume" };
-        let next_state = if !paused {
-            PlaybackState::Paused
-        } else {
-            PlaybackState::Playing
-        };
-        info!("Toggling playback -> {next_state:?}");
-        let req = serde_json::json!({ "cmd": cmd });
-        let _ = self.cmd_tx.send(req.to_string());
-        let _ = self.state_tx.send(next_state);
+        let _ = self.cmd_tx.send(TtsCommand::TogglePause);
     }
 
     /// Change active voice (e.g. "af_heart", "bf_isabella", "am_puck", "bm_fable")
     pub fn set_voice(&self, voice: &str) {
-        let req = serde_json::json!({ "cmd": "set_voice", "voice": voice });
-        let _ = self.cmd_tx.send(req.to_string());
+        if let Ok(mut guard) = self.voice.lock() {
+            *guard = voice.to_string();
+        }
     }
 
     /// Change speech speed (0.6x to 2.5x)
     pub fn set_speed(&self, speed: f32) {
-        let req = serde_json::json!({ "cmd": "set_speed", "speed": speed });
-        let _ = self.cmd_tx.send(req.to_string());
+        self.speed_bits.store(speed.to_bits(), Ordering::SeqCst);
     }
 
     /// Change volume (0.0 to 1.0)
     pub fn set_volume(&self, volume: f32) {
-        let req = serde_json::json!({ "cmd": "set_volume", "volume": volume });
-        let _ = self.cmd_tx.send(req.to_string());
+        let clamped = volume.clamp(0.0, 2.0);
+        self.volume_bits.store(clamped.to_bits(), Ordering::SeqCst);
+        if let Ok(guard) = self.active_sink.lock() {
+            if let Some(ref s) = *guard {
+                s.set_volume(clamped);
+            }
+        }
     }
 }

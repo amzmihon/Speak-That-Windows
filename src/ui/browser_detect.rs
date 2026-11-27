@@ -24,11 +24,11 @@ pub struct BrowserDetector;
 
 impl BrowserDetector {
     pub fn find_project_root() -> PathBuf {
-        // 1. Check starting from executable location
+        // 1. Check starting from executable location (supports both release layout & dev tree)
         if let Ok(exe_path) = std::env::current_exe() {
             let mut curr = exe_path.parent();
             while let Some(dir) = curr {
-                if dir.join("ADHD_Bionic-Reader").is_dir() {
+                if dir.join("ADHD_Bionic-Reader").is_dir() || dir.join("extensions").is_dir() {
                     return dir.to_path_buf();
                 }
                 curr = dir.parent();
@@ -38,7 +38,7 @@ impl BrowserDetector {
         if let Ok(cwd) = std::env::current_dir() {
             let mut curr = Some(cwd.as_path());
             while let Some(dir) = curr {
-                if dir.join("ADHD_Bionic-Reader").is_dir() {
+                if dir.join("ADHD_Bionic-Reader").is_dir() || dir.join("extensions").is_dir() {
                     return dir.to_path_buf();
                 }
                 curr = dir.parent();
@@ -49,15 +49,38 @@ impl BrowserDetector {
     }
 
     pub fn get_extension_path_chromium() -> PathBuf {
-        Self::find_project_root()
-            .join("ADHD_Bionic-Reader")
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let packaged = exe_dir.join("extensions").join("chromium");
+                if packaged.is_dir() {
+                    return packaged;
+                }
+            }
+        }
+        let root = Self::find_project_root();
+        let packaged_root = root.join("extensions").join("chromium");
+        if packaged_root.is_dir() {
+            return packaged_root;
+        }
+        root.join("ADHD_Bionic-Reader")
             .join("ADHD_Bionic-Reader Extantion Unpacked Loader")
     }
 
     pub fn get_extension_path_firefox() -> PathBuf {
-        Self::find_project_root()
-            .join("ADHD_Bionic-Reader")
-            .join("extension_firefox")
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let packaged = exe_dir.join("extensions").join("firefox");
+                if packaged.is_dir() {
+                    return packaged;
+                }
+            }
+        }
+        let root = Self::find_project_root();
+        let packaged_root = root.join("extensions").join("firefox");
+        if packaged_root.is_dir() {
+            return packaged_root;
+        }
+        root.join("ADHD_Bionic-Reader").join("extension_firefox")
     }
 
     pub fn detect_all() -> Vec<InstalledBrowser> {

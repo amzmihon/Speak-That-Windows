@@ -1,3 +1,4 @@
+pub mod g2p;
 pub mod mic;
 pub mod stt;
 pub mod tts;

@@ -183,6 +183,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let (tts_engine, _tts_rx) = TtsEngine::new();
+    tts_engine.set_voice(&config.tts.voice_id);
+    tts_engine.set_speed(config.tts.speed);
+    tts_engine.set_volume(config.tts.volume);
     let (mic_manager, _ptt_rx, _duck_rx) = MicrophoneManager::new();
     let model_path = dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))

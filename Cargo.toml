@@ -31,3 +31,12 @@ dirs = "5.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 eframe = { version = "0.27", default-features = false, features = ["default_fonts", "glow"] }
+ort = { version = "2.0.0-rc.15", default-features = false, features = ["load-dynamic", "std"] }
+rodio = { version = "0.20", default-features = false }
+flate2 = "1.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1

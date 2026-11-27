@@ -1,19 +1,19 @@
 # SpeakThat + ADHD Bionic Reader Suite — Project Knowledge & Conversation Log
 
 **Workspace:** `E:\Speak-That-Windows`  
-**Latest Commit:** `b62ef93` (local `main`, ahead of `origin/main` by 9 commits; **local commits only — no `git push`**)  
-**Last Updated:** 2026-11-27  
+**Release:** `v0.2.0` (100% Pure Rust + Native ONNX Runtime, zero Python dependency)  
+**Last Updated:** 2026-11-28  
 
 ---
 
 ## 1. Project Overview
 
-**SpeakThat + ADHD Bionic Reader Suite (v0.2.0)** is a unified, 100% offline-capable Windows accessibility and reading assistant built in **Rust** (`speakthat.exe`) alongside a **Python neural TTS worker** and **cross-browser extensions** (Chromium & Firefox).
+**SpeakThat + ADHD Bionic Reader Suite (v0.2.0)** is a unified, 100% offline-capable Windows accessibility and reading assistant built in pure **Rust** (`speakthat.exe`) alongside **cross-browser extensions** (Chromium & Firefox).
 
 ### Core Pillars
-1. **Offline Neural Text-to-Speech (Paradee 8M):**
-   - Uses the bundled 8.5 MB quantized ONNX model (`speak_that/model/paradee_int8.onnx`) and Kokoro/Misaki G2P via `src/audio/tts.rs` and `src/audio/tts_worker.py` (running in `.venv`).
-   - Reads highlighted text from any Windows application via global hotkeys (`Ctrl + Space`).
+1. **Pure-Rust Offline Neural Text-to-Speech (Paradee 8M):**
+   - Uses the bundled 8.5 MB quantized ONNX model (`models/paradee_int8.onnx` or `speak_that/model/paradee_int8.onnx`) directly via `ort` (`load-dynamic` + `onnxruntime.dll`) and `rodio` 24 kHz WASAPI audio output (`src/audio/tts.rs`), with embedded compressed US + GB Misaki English G2P lexicons (`assets/misaki_us.tsv.gz`, `assets/misaki_gb.tsv.gz`, `src/audio/g2p.rs`). Zero Python / `.venv` runtime dependencies.
+   - Reads highlighted text from any Windows application via global hotkeys (`Ctrl + Space` or `Mouse 4 (Back)`) and stops immediately via `Ctrl + Shift + X`.
 2. **On-Demand Offline Speech-to-Text (NVIDIA Parakeet-TDT 0.6B v3):**
    - Optional ~670 MB model downloaded on demand from Hugging Face CDN with live progress tracking (`src/downloader/mod.rs` & `src/ui/dashboard.rs`).
    - Designed for Push-to-Talk dictation (`MouseSide1(Back)` hold or keyboard chord).
@@ -314,3 +314,32 @@ Every user instruction from this conversation and the exact actions performed in
   > `add all the instruction that i gave you in this chat. and what you did everything in the knowledge.md file`
 * **What Was Done:**
   - Appended this complete **Turn-by-Turn Instructions & Actions Log** (Turns 1–24) with verbatim user prompts and corresponding actions to `knowledge.md`.
+
+
+### Turn 25 (`2026-11-27T17:10:09Z`)
+* **User Instruction:**
+  > `Fix the shortcut architecture and the Shortcuts UI in E:\Speak-That-Windows... Support BOTH Keyboard + Mouse Bindings Simultaneously... Fix the Shortcuts Dashboard UI... Fix False-Positive Shortcut Collision Detection... Fix Missing Font Glyphs & App Icon...`
+* **What Was Done:**
+  - Replaced single `InputChord` shortcut fields with dual `ActionBinding { keyboard, mouse }` in `src/config.rs` (`Speak Selection`: `Ctrl+Space` + `Mouse 4`, `Push-to-Talk`: `Ctrl+Shift+D` + `Mouse 5`).
+  - Added lock-free `BOUND_MOUSE_MASK` & `WM_MBUTTONDOWN`/`WM_MBUTTONUP` support + exact `ms.time` hold tracking in `src/input/hook.rs`.
+  - Switched `src/input/catalog.rs` to exact modifier-set equality (`exact_mods`) eliminating the false-positive `Ctrl+S` warning on `Ctrl+Shift+S`, and allowed 1-key bindings for Open Home Dashboard.
+  - Rebuilt the `dashboard.rs` Shortcuts table with explicit column widths, wrapped Status text, visible `Change` buttons with live key-capture modal, inline Mouse Button + Hold controls, Windows Segoe UI/Symbol/Emoji fallback fonts, and embedded custom brand icon (`3766ca2`).
+
+### Turn 26 (`2026-11-27T17:39:20Z`)
+* **User Instruction:**
+  > `Add a customizable "Stop Speaking (TTS)" global shortcut to E:\Speak-That-Windows so users can stop TTS playback immediately without using the system tray.`
+* **What Was Done:**
+  - Added `stop_speaking: ActionBinding` (`Ctrl+Shift+X` default, `#[serde(default)]` auto-migration) in `src/config.rs`, wired `tts.stop()` in `src/main.rs`, and added the 6th row `Stop Speaking (TTS)` to `src/ui/dashboard.rs`; verified live via `SendInput` (`f5e9cfb`).
+
+### Turn 27 (`2026-11-27T18:01:07Z`)
+* **User Instruction:**
+  > `The live terminal logs from target\debug\speakthat.exe pinpointed the exact bugs breaking Speak Selection (both Keyboard and Mouse 4). Fix all 4 issues in E:\Speak-That-Windows...`
+* **What Was Done:**
+  - Released held L/R modifier keys (`VK_LWIN`..`VK_RCONTROL`) + 25 ms settle delay before sending scan-code-backed `Ctrl+C`, and polled `GetClipboardSequenceNumber()` up to 300 ms with diagnostic `INFO` logs in `src/clipboard/selection.rs`.
+  - Added `speak_in_flight` debounce guard in `src/main.rs`, OS auto-repeat bitmap filtering + `LLKHF_INJECTED` exclusion + keystroke log spam removal in `src/input/hook.rs`, and hard-blocked `Win+Space` in `src/input/catalog.rs`; verified live text capture from Notepad via Mouse 4 (`ec58533`).
+
+### Turn 28 (`2026-11-27T18:22:00Z`)
+* **User Instruction:**
+  > `Convert Paradee 8M TTS to 100% native Rust (eliminating ALL Python / .venv dependencies), package a standalone zero-dependency Windows release, push all updates to GitHub, and publish a new GitHub Release.`
+* **What Was Done:**
+  - Removed Python worker (`tts_worker.py`), exported compressed Misaki US+GB lexicons (`assets/misaki_us.tsv.gz`, `assets/misaki_gb.tsv.gz`) + `assets/paradee_config.json`, implemented `src/audio/g2p.rs` (lexicon + suffix stemming + LTS fallback + `<= 512` BOS/EOS token chunking), wired `ort` (`load-dynamic`) + `rodio` 24 kHz playback in `src/audio/tts.rs`, updated `src/ui/browser_detect.rs` for packaged `./extensions/` + `./models/`, fixed `bionic/engine.rs` unit test, built optimized release binary, verified zero-Python isolated execution in `%TEMP%`, pushed `main` & `v0.2.0`, and published the GitHub Release.

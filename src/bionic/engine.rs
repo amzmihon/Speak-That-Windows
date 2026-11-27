@@ -149,6 +149,6 @@ mod tests {
         let engine = BionicEngine::default();
         let out = engine.to_unicode_bionic("Reading is reading");
         assert!(out.contains("ding"));
-        assert!(out.contains("is"));
+        assert!(out.contains("\u{1D5F6}s")); // "𝗶s" (len 2, 40% -> bold 'i')
     }
 }
