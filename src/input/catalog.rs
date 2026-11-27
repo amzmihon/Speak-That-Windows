@@ -123,6 +123,10 @@ mod tests {
             CollisionSeverity::Allowed
         );
         assert_eq!(
+            ShortcutCatalog::validate_for(&cfg.shortcuts.stop_speaking.keyboard, false),
+            CollisionSeverity::Allowed
+        );
+        assert_eq!(
             ShortcutCatalog::validate_for(&cfg.shortcuts.push_to_talk.keyboard, false),
             CollisionSeverity::Allowed
         );

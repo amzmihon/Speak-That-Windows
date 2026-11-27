@@ -112,6 +112,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Configuration loaded from: {:?}", AppConfig::config_path());
     info!("Shortcuts bound (Keyboard + Mouse active simultaneously):");
     info!("  - Speak Selection: {}", format_binding_log(&config.shortcuts.speak_selection));
+    info!("  - Stop Speaking (TTS): {}", format_binding_log(&config.shortcuts.stop_speaking));
     info!("  - Push-to-Talk (STT): {}", format_binding_log(&config.shortcuts.push_to_talk));
     info!("  - Open Home Dashboard: {}", format_binding_log(&config.shortcuts.open_home));
     info!("  - Toggle Bionic Reading: {}", format_binding_log(&config.shortcuts.toggle_bionic));
@@ -120,6 +121,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 3. Validate Shortcuts via Exact-Match Shortcut Collision Protection
     let checks = [
         ("Speak Selection", &config.shortcuts.speak_selection, false),
+        ("Stop Speaking", &config.shortcuts.stop_speaking, false),
         ("Push-to-Talk", &config.shortcuts.push_to_talk, false),
         ("Open Home", &config.shortcuts.open_home, true),
         ("Toggle Bionic", &config.shortcuts.toggle_bionic, false),
@@ -211,6 +213,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if shortcuts.speak_selection.matches_keyboard(&chord) {
                         info!("🔥 [HOTKEY MATCHED] Speak Selection (Keyboard): {}", chord);
                         trigger_speak_selection(Arc::clone(&loop_tts));
+                    } else if shortcuts.stop_speaking.matches_keyboard(&chord) {
+                        info!("🔥 [HOTKEY MATCHED] Stop Speaking: {}", chord);
+                        loop_tts.stop();
                     } else if shortcuts.toggle_bionic.matches_keyboard(&chord) {
                         info!(
                             "🔥 [HOTKEY MATCHED] Native Bionic In-Place Transformation (Keyboard): {}",
@@ -275,6 +280,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "Mouse Button {} released before {}ms hold threshold ({}ms)",
                                 btn, threshold, dur_ms
                             );
+                        }
+                    } else if shortcuts.stop_speaking.matches_mouse(btn) {
+                        let threshold = shortcuts.stop_speaking.mouse_hold_ms();
+                        if dur_ms >= threshold {
+                            info!(
+                                "🔥 [HOTKEY MATCHED] Stop Speaking: Mouse Button {} ({}ms >= {}ms)",
+                                btn, dur_ms, threshold
+                            );
+                            loop_tts.stop();
                         }
                     } else if shortcuts.toggle_bionic.matches_mouse(btn) {
                         let threshold = shortcuts.toggle_bionic.mouse_hold_ms();

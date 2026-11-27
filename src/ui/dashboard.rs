@@ -49,6 +49,7 @@ enum DashboardTab {
 #[derive(PartialEq, Eq, Clone, Copy)]
 enum EditingShortcut {
     SpeakSelection,
+    StopSpeaking,
     PushToTalk,
     OpenHome,
     ToggleBionic,
@@ -59,6 +60,7 @@ impl EditingShortcut {
     fn title(&self) -> &'static str {
         match self {
             Self::SpeakSelection => "Speak Selection",
+            Self::StopSpeaking => "Stop Speaking (TTS)",
             Self::PushToTalk => "Push-to-Talk (STT)",
             Self::OpenHome => "Open Home Dashboard",
             Self::ToggleBionic => "Toggle Bionic Reading",
@@ -223,6 +225,7 @@ impl SettingsDashboard {
     fn binding_mut(&mut self, target: EditingShortcut) -> &mut ActionBinding {
         match target {
             EditingShortcut::SpeakSelection => &mut self.config.shortcuts.speak_selection,
+            EditingShortcut::StopSpeaking => &mut self.config.shortcuts.stop_speaking,
             EditingShortcut::PushToTalk => &mut self.config.shortcuts.push_to_talk,
             EditingShortcut::OpenHome => &mut self.config.shortcuts.open_home,
             EditingShortcut::ToggleBionic => &mut self.config.shortcuts.toggle_bionic,
@@ -242,6 +245,7 @@ impl SettingsDashboard {
     fn count_duplicate_bindings(&self, target: EditingShortcut) -> Option<String> {
         let rows = [
             (EditingShortcut::SpeakSelection, &self.config.shortcuts.speak_selection),
+            (EditingShortcut::StopSpeaking, &self.config.shortcuts.stop_speaking),
             (EditingShortcut::PushToTalk, &self.config.shortcuts.push_to_talk),
             (EditingShortcut::OpenHome, &self.config.shortcuts.open_home),
             (EditingShortcut::ToggleBionic, &self.config.shortcuts.toggle_bionic),
@@ -249,6 +253,7 @@ impl SettingsDashboard {
         ];
         let current = match target {
             EditingShortcut::SpeakSelection => &self.config.shortcuts.speak_selection,
+            EditingShortcut::StopSpeaking => &self.config.shortcuts.stop_speaking,
             EditingShortcut::PushToTalk => &self.config.shortcuts.push_to_talk,
             EditingShortcut::OpenHome => &self.config.shortcuts.open_home,
             EditingShortcut::ToggleBionic => &self.config.shortcuts.toggle_bionic,
@@ -493,6 +498,7 @@ impl eframe::App for SettingsDashboard {
 
                             let targets = [
                                 EditingShortcut::SpeakSelection,
+                                EditingShortcut::StopSpeaking,
                                 EditingShortcut::PushToTalk,
                                 EditingShortcut::OpenHome,
                                 EditingShortcut::ToggleBionic,

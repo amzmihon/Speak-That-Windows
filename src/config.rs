@@ -78,9 +78,22 @@ impl ActionBinding {
     }
 }
 
+pub fn default_stop_speaking() -> ActionBinding {
+    ActionBinding::new(
+        InputChord::new(
+            vec![ModifierKey::Control, ModifierKey::Shift],
+            TriggerSource::Key(0x58), // VK_X
+            TriggerMode::Press,
+        ),
+        None,
+    )
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShortcutConfig {
     pub speak_selection: ActionBinding,
+    #[serde(default = "default_stop_speaking")]
+    pub stop_speaking: ActionBinding,
     pub push_to_talk: ActionBinding,
     pub open_home: ActionBinding,
     pub toggle_bionic: ActionBinding,
@@ -93,6 +106,7 @@ impl ShortcutConfig {
         let mut mask = 0u32;
         for b in [
             &self.speak_selection,
+            &self.stop_speaking,
             &self.push_to_talk,
             &self.open_home,
             &self.toggle_bionic,
@@ -138,6 +152,8 @@ impl Default for AppConfig {
                     ),
                     Some(InputChord::mouse_hold(4, Duration::from_millis(0))),
                 ),
+                // Stop Speaking (TTS): Ctrl + Shift + X (optional mouse None)
+                stop_speaking: default_stop_speaking(),
                 // Push-to-Talk (STT): Ctrl + Shift + D AND Mouse Button 5 (XButton2)
                 push_to_talk: ActionBinding::new(
                     InputChord::new(
@@ -197,7 +213,10 @@ impl AppConfig {
         let path = Self::config_path();
         if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(config) = serde_json::from_str(&content) {
+                if let Ok(config) = serde_json::from_str::<Self>(&content) {
+                    if !content.contains("\"stop_speaking\"") {
+                        let _ = config.save();
+                    }
                     return config;
                 }
             }
