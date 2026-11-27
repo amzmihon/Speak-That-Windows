@@ -35,18 +35,29 @@ impl fmt::Display for TriggerSource {
                 0x0D => write!(f, "Enter"),
                 0x1B => write!(f, "Esc"),
                 0x09 => write!(f, "Tab"),
+                0x08 => write!(f, "Backspace"),
+                0x2D => write!(f, "Insert"),
+                0x2E => write!(f, "Delete"),
+                0x24 => write!(f, "Home"),
+                0x23 => write!(f, "End"),
+                0x21 => write!(f, "PageUp"),
+                0x22 => write!(f, "PageDown"),
+                0x25 => write!(f, "Left"),
+                0x26 => write!(f, "Up"),
+                0x27 => write!(f, "Right"),
+                0x28 => write!(f, "Down"),
                 0x41..=0x5A => write!(f, "{}", (b'A' + (*code as u8 - 0x41)) as char),
                 0x30..=0x39 => write!(f, "{}", (b'0' + (*code as u8 - 0x30)) as char),
                 0x70..=0x7B => write!(f, "F{}", *code - 0x6F),
                 _ => write!(f, "Key(0x{:02X})", code),
             },
             TriggerSource::MouseButton(btn) => match *btn {
-                1 => write!(f, "MouseLeft"),
-                2 => write!(f, "MouseRight"),
-                3 => write!(f, "MouseMiddle"),
-                4 => write!(f, "MouseSide1(Back)"),
-                5 => write!(f, "MouseSide2(Forward)"),
-                _ => write!(f, "MouseButton({})", btn),
+                1 => write!(f, "Mouse Left"),
+                2 => write!(f, "Mouse Right"),
+                3 => write!(f, "Mouse Middle"),
+                4 => write!(f, "Mouse 4 (Back)"),
+                5 => write!(f, "Mouse 5 (Forward)"),
+                _ => write!(f, "Mouse Button {}", btn),
             },
         }
     }
@@ -109,6 +120,19 @@ impl InputChord {
             }
         }
         true
+    }
+
+    #[allow(dead_code)]
+    pub fn mouse_button_and_hold_ms(&self) -> Option<(u32, u64)> {
+        if let TriggerSource::MouseButton(btn) = self.trigger {
+            let hold_ms = match self.trigger_mode {
+                TriggerMode::Hold(d) => d.as_millis() as u64,
+                _ => 0,
+            };
+            Some((btn, hold_ms))
+        } else {
+            None
+        }
     }
 }
 

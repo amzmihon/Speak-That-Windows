@@ -37,13 +37,75 @@ pub struct SttSettings {
     pub audio_ducking_db: f32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActionBinding {
+    pub keyboard: InputChord,
+    pub mouse: Option<InputChord>,
+}
+
+impl ActionBinding {
+    pub fn new(keyboard: InputChord, mouse: Option<InputChord>) -> Self {
+        Self { keyboard, mouse }
+    }
+
+    pub fn matches_keyboard(&self, chord: &InputChord) -> bool {
+        self.keyboard.matches(chord)
+    }
+
+    pub fn matches_mouse(&self, btn: u32) -> bool {
+        if let Some(ref m) = self.mouse {
+            matches!(m.trigger, TriggerSource::MouseButton(b) if b == btn)
+        } else {
+            false
+        }
+    }
+
+    pub fn mouse_button(&self) -> Option<u32> {
+        self.mouse.as_ref().and_then(|m| match m.trigger {
+            TriggerSource::MouseButton(b) => Some(b),
+            _ => None,
+        })
+    }
+
+    pub fn mouse_hold_ms(&self) -> u64 {
+        self.mouse
+            .as_ref()
+            .map(|m| match m.trigger_mode {
+                TriggerMode::Hold(d) => d.as_millis() as u64,
+                _ => 0,
+            })
+            .unwrap_or(0)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShortcutConfig {
-    pub speak_selection: InputChord,
-    pub push_to_talk: InputChord,
-    pub open_home: InputChord,
-    pub toggle_bionic: InputChord,
-    pub toggle_reader: InputChord,
+    pub speak_selection: ActionBinding,
+    pub push_to_talk: ActionBinding,
+    pub open_home: ActionBinding,
+    pub toggle_bionic: ActionBinding,
+    pub toggle_reader: ActionBinding,
+}
+
+impl ShortcutConfig {
+    /// Returns bitmask of bound mouse buttons (bit N = mouse button N)
+    pub fn bound_mouse_mask(&self) -> u32 {
+        let mut mask = 0u32;
+        for b in [
+            &self.speak_selection,
+            &self.push_to_talk,
+            &self.open_home,
+            &self.toggle_bionic,
+            &self.toggle_reader,
+        ] {
+            if let Some(btn) = b.mouse_button() {
+                if btn < 32 {
+                    mask |= 1u32 << btn;
+                }
+            }
+        }
+        mask
+    }
 }
 
 impl Default for AppConfig {
@@ -67,35 +129,50 @@ impl Default for AppConfig {
                 allowed_scripts: vec!["Latin".to_string()],
             },
             shortcuts: ShortcutConfig {
-                // Ctrl + Space to speak highlighted text
-                speak_selection: InputChord::new(
-                    vec![ModifierKey::Control],
-                    TriggerSource::Key(0x20), // VK_SPACE
-                    TriggerMode::Press,
+                // Speak Selection: Ctrl + Space AND Mouse Button 4 (XButton1)
+                speak_selection: ActionBinding::new(
+                    InputChord::new(
+                        vec![ModifierKey::Control],
+                        TriggerSource::Key(0x20), // VK_SPACE
+                        TriggerMode::Press,
+                    ),
+                    Some(InputChord::mouse_hold(4, Duration::from_millis(0))),
                 ),
-                // Mouse Side Button 1 (Back) held down for Push-to-Talk
-                push_to_talk: InputChord::new(
-                    vec![],
-                    TriggerSource::MouseButton(4), // XButton1
-                    TriggerMode::Hold(Duration::from_millis(200)),
+                // Push-to-Talk (STT): Ctrl + Shift + D AND Mouse Button 5 (XButton2)
+                push_to_talk: ActionBinding::new(
+                    InputChord::new(
+                        vec![ModifierKey::Control, ModifierKey::Shift],
+                        TriggerSource::Key(0x44), // VK_D
+                        TriggerMode::Press,
+                    ),
+                    Some(InputChord::mouse_hold(5, Duration::from_millis(200))),
                 ),
-                // F9 or Ctrl + Shift + S to open Home / Settings dashboard
-                open_home: InputChord::new(
-                    vec![ModifierKey::Control, ModifierKey::Shift],
-                    TriggerSource::Key(0x53), // VK_S
-                    TriggerMode::Press,
+                // Open Home Dashboard: Ctrl + Shift + S (single key also permitted in editor)
+                open_home: ActionBinding::new(
+                    InputChord::new(
+                        vec![ModifierKey::Control, ModifierKey::Shift],
+                        TriggerSource::Key(0x53), // VK_S
+                        TriggerMode::Press,
+                    ),
+                    None,
                 ),
-                // Alt + B to toggle Bionic Reading
-                toggle_bionic: InputChord::new(
-                    vec![ModifierKey::Alt],
-                    TriggerSource::Key(0x42), // VK_B
-                    TriggerMode::Press,
+                // Toggle Bionic Reading: Alt + B
+                toggle_bionic: ActionBinding::new(
+                    InputChord::new(
+                        vec![ModifierKey::Alt],
+                        TriggerSource::Key(0x42), // VK_B
+                        TriggerMode::Press,
+                    ),
+                    None,
                 ),
-                // Alt + R to toggle Reader View
-                toggle_reader: InputChord::new(
-                    vec![ModifierKey::Alt],
-                    TriggerSource::Key(0x52), // VK_R
-                    TriggerMode::Press,
+                // Toggle Native Reader View: Alt + R
+                toggle_reader: ActionBinding::new(
+                    InputChord::new(
+                        vec![ModifierKey::Alt],
+                        TriggerSource::Key(0x52), // VK_R
+                        TriggerMode::Press,
+                    ),
+                    None,
                 ),
             },
             process_blacklist: vec![

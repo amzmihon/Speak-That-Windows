@@ -1,11 +1,41 @@
 use eframe::egui;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use tokio::sync::watch;
+
 use crate::audio::TtsEngine;
-use crate::config::AppConfig;
+use crate::config::{ActionBinding, AppConfig, ShortcutConfig};
 use crate::downloader::{DownloadState, ModelDownloader};
-use crate::input::{InputChord, ModifierKey, ShortcutCatalog, TriggerMode, TriggerSource};
+use crate::input::{
+    CollisionSeverity, InputChord, InputHookManager, ModifierKey, ShortcutCatalog, TriggerSource,
+};
 use crate::ui::browser_detect::{BrowserDetector, InstalledBrowser};
+
+/// Loads Windows Segoe UI / Symbol / Emoji fonts into egui as fallbacks so no missing-glyph boxes appear.
+pub fn configure_windows_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    let candidates = [
+        ("segoe_ui", r"C:\Windows\Fonts\segoeui.ttf"),
+        ("segoe_symbol", r"C:\Windows\Fonts\seguisym.ttf"),
+        ("segoe_emoji", r"C:\Windows\Fonts\seguiemj.ttf"),
+    ];
+
+    for (name, path) in candidates {
+        if let Ok(bytes) = std::fs::read(path) {
+            fonts
+                .font_data
+                .insert(name.to_owned(), egui::FontData::from_owned(bytes));
+            if let Some(fam) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+                fam.push(name.to_owned());
+            }
+            if let Some(fam) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+                fam.push(name.to_owned());
+            }
+        }
+    }
+
+    ctx.set_fonts(fonts);
+}
 
 #[derive(PartialEq, Eq)]
 enum DashboardTab {
@@ -25,104 +55,385 @@ enum EditingShortcut {
     ToggleReader,
 }
 
+impl EditingShortcut {
+    fn title(&self) -> &'static str {
+        match self {
+            Self::SpeakSelection => "Speak Selection",
+            Self::PushToTalk => "Push-to-Talk (STT)",
+            Self::OpenHome => "Open Home Dashboard",
+            Self::ToggleBionic => "Toggle Bionic Reading",
+            Self::ToggleReader => "Toggle Reader View",
+        }
+    }
+
+    fn allows_single_key(&self) -> bool {
+        matches!(self, Self::OpenHome)
+    }
+}
+
 pub struct SettingsDashboard {
     config: AppConfig,
+    shared_shortcuts: Arc<RwLock<ShortcutConfig>>,
     active_tab: DashboardTab,
     tts: Arc<TtsEngine>,
     browsers: Vec<InstalledBrowser>,
     test_text: String,
     stt_rx: Option<watch::Receiver<DownloadState>>,
     status_message: Option<String>,
-    editing_shortcut: Option<EditingShortcut>,
-    // Editor draft state
-    draft_is_mouse: bool,
+    // Modal keyboard editor state
+    editing_keyboard: Option<EditingShortcut>,
+    capturing_live_key: bool,
     draft_ctrl: bool,
     draft_shift: bool,
     draft_alt: bool,
     draft_win: bool,
-    draft_key_idx: usize,
-    draft_mouse_btn: u32,
-    draft_mouse_duration_ms: u64,
+    draft_key_vk: u16,
 }
 
-const COMMON_KEYS: [(&str, u16); 30] = [
+const COMMON_KEYS: [(&str, u16); 48] = [
     ("Space", 0x20),
-    ("Return / Enter", 0x0D),
+    ("Enter", 0x0D),
     ("Tab", 0x09),
-    ("Escape", 0x1B),
+    ("Esc", 0x1B),
+    ("Home", 0x24),
+    ("End", 0x23),
+    ("Insert", 0x2D),
+    ("Delete", 0x2E),
     ("A", 0x41), ("B", 0x42), ("C", 0x43), ("D", 0x44), ("E", 0x45),
     ("F", 0x46), ("G", 0x47), ("H", 0x48), ("I", 0x49), ("J", 0x4A),
     ("K", 0x4B), ("L", 0x4C), ("M", 0x4D), ("N", 0x4E), ("O", 0x4F),
     ("P", 0x50), ("Q", 0x51), ("R", 0x52), ("S", 0x53), ("T", 0x54),
     ("U", 0x55), ("V", 0x56), ("W", 0x57), ("X", 0x58), ("Y", 0x59),
     ("Z", 0x5A),
+    ("0", 0x30), ("1", 0x31), ("2", 0x32), ("3", 0x33), ("4", 0x34),
+    ("5", 0x35), ("6", 0x36), ("7", 0x37), ("8", 0x38), ("9", 0x39),
+    ("F8", 0x77), ("F9", 0x78), ("F10", 0x79), ("F12", 0x7B),
 ];
 
+fn vk_display_name(vk: u16) -> String {
+    if let Some(&(name, _)) = COMMON_KEYS.iter().find(|(_, code)| *code == vk) {
+        return name.to_string();
+    }
+    if (0x70..=0x7B).contains(&vk) {
+        return format!("F{}", vk - 0x6F);
+    }
+    format!("Key(0x{:02X})", vk)
+}
+
+fn egui_key_to_vk(key: egui::Key) -> Option<u16> {
+    use egui::Key;
+    Some(match key {
+        Key::Space => 0x20,
+        Key::Enter => 0x0D,
+        Key::Tab => 0x09,
+        Key::Escape => 0x1B,
+        Key::Backspace => 0x08,
+        Key::Insert => 0x2D,
+        Key::Delete => 0x2E,
+        Key::Home => 0x24,
+        Key::End => 0x23,
+        Key::PageUp => 0x21,
+        Key::PageDown => 0x22,
+        Key::ArrowLeft => 0x25,
+        Key::ArrowUp => 0x26,
+        Key::ArrowRight => 0x27,
+        Key::ArrowDown => 0x28,
+        Key::A => 0x41, Key::B => 0x42, Key::C => 0x43, Key::D => 0x44, Key::E => 0x45,
+        Key::F => 0x46, Key::G => 0x47, Key::H => 0x48, Key::I => 0x49, Key::J => 0x4A,
+        Key::K => 0x4B, Key::L => 0x4C, Key::M => 0x4D, Key::N => 0x4E, Key::O => 0x4F,
+        Key::P => 0x50, Key::Q => 0x51, Key::R => 0x52, Key::S => 0x53, Key::T => 0x54,
+        Key::U => 0x55, Key::V => 0x56, Key::W => 0x57, Key::X => 0x58, Key::Y => 0x59,
+        Key::Z => 0x5A,
+        Key::Num0 => 0x30, Key::Num1 => 0x31, Key::Num2 => 0x32, Key::Num3 => 0x33, Key::Num4 => 0x34,
+        Key::Num5 => 0x35, Key::Num6 => 0x36, Key::Num7 => 0x37, Key::Num8 => 0x38, Key::Num9 => 0x39,
+        Key::F1 => 0x70, Key::F2 => 0x71, Key::F3 => 0x72, Key::F4 => 0x73,
+        Key::F5 => 0x74, Key::F6 => 0x75, Key::F7 => 0x76, Key::F8 => 0x77,
+        Key::F9 => 0x78, Key::F10 => 0x79, Key::F11 => 0x7A, Key::F12 => 0x7B,
+        _ => return None,
+    })
+}
+
+fn mouse_btn_label(btn: Option<u32>) -> &'static str {
+    match btn {
+        None => "None",
+        Some(4) => "Mouse 4 (Back)",
+        Some(5) => "Mouse 5 (Forward)",
+        Some(3) => "Mouse Middle",
+        Some(_) => "Other Button",
+    }
+}
+
 impl SettingsDashboard {
-    pub fn new(config: AppConfig, tts: Arc<TtsEngine>) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        config: AppConfig,
+        shared_shortcuts: Arc<RwLock<ShortcutConfig>>,
+        tts: Arc<TtsEngine>,
+    ) -> Self {
+        configure_windows_fonts(&cc.egui_ctx);
         let browsers = BrowserDetector::detect_all();
         Self {
             config,
+            shared_shortcuts,
             active_tab: DashboardTab::Shortcuts,
             tts,
             browsers,
             test_text: "Hello! This is offline neural speech powered by Paradee 8M.".to_string(),
             stt_rx: None,
             status_message: None,
-            editing_shortcut: None,
-            draft_is_mouse: false,
+            editing_keyboard: None,
+            capturing_live_key: false,
             draft_ctrl: true,
             draft_shift: false,
             draft_alt: false,
             draft_win: false,
-            draft_key_idx: 0,
-            draft_mouse_btn: 1, // XButton1 (Back)
-            draft_mouse_duration_ms: 200,
+            draft_key_vk: 0x20,
         }
     }
 
-    fn init_draft_from_chord(&mut self, chord: &InputChord) {
+    fn init_keyboard_draft(&mut self, chord: &InputChord) {
         self.draft_ctrl = chord.modifiers.contains(&ModifierKey::Control);
         self.draft_shift = chord.modifiers.contains(&ModifierKey::Shift);
         self.draft_alt = chord.modifiers.contains(&ModifierKey::Alt);
         self.draft_win = chord.modifiers.contains(&ModifierKey::Win);
+        self.draft_key_vk = match chord.trigger {
+            TriggerSource::Key(vk) => vk,
+            _ => 0x20,
+        };
+        self.capturing_live_key = true;
+    }
 
-        match chord.trigger {
-            TriggerSource::Key(vk) => {
-                self.draft_is_mouse = false;
-                self.draft_key_idx = COMMON_KEYS
-                    .iter()
-                    .position(|(_, k)| *k == vk)
-                    .unwrap_or(0);
-            }
-            TriggerSource::MouseButton(btn) => {
-                self.draft_is_mouse = true;
-                self.draft_mouse_btn = btn;
-            }
+    fn build_keyboard_draft(&self) -> InputChord {
+        let mut mods = Vec::new();
+        if self.draft_ctrl {
+            mods.push(ModifierKey::Control);
         }
+        if self.draft_shift {
+            mods.push(ModifierKey::Shift);
+        }
+        if self.draft_alt {
+            mods.push(ModifierKey::Alt);
+        }
+        if self.draft_win {
+            mods.push(ModifierKey::Win);
+        }
+        InputChord::key_press(mods, self.draft_key_vk)
+    }
 
-        if let TriggerMode::Hold(d) = chord.trigger_mode {
-            self.draft_mouse_duration_ms = d.as_millis() as u64;
-        } else {
-            self.draft_mouse_duration_ms = 200;
+    fn binding_mut(&mut self, target: EditingShortcut) -> &mut ActionBinding {
+        match target {
+            EditingShortcut::SpeakSelection => &mut self.config.shortcuts.speak_selection,
+            EditingShortcut::PushToTalk => &mut self.config.shortcuts.push_to_talk,
+            EditingShortcut::OpenHome => &mut self.config.shortcuts.open_home,
+            EditingShortcut::ToggleBionic => &mut self.config.shortcuts.toggle_bionic,
+            EditingShortcut::ToggleReader => &mut self.config.shortcuts.toggle_reader,
         }
     }
 
-    fn build_draft_chord(&self) -> InputChord {
-        if self.draft_is_mouse {
-            InputChord::mouse_hold(
-                self.draft_mouse_btn,
-                std::time::Duration::from_millis(self.draft_mouse_duration_ms),
-            )
-        } else {
-            let mut mods = Vec::new();
-            if self.draft_ctrl { mods.push(ModifierKey::Control); }
-            if self.draft_shift { mods.push(ModifierKey::Shift); }
-            if self.draft_alt { mods.push(ModifierKey::Alt); }
-            if self.draft_win { mods.push(ModifierKey::Win); }
+    fn apply_and_save_shortcuts(&mut self, msg: &str) {
+        if let Ok(mut guard) = self.shared_shortcuts.write() {
+            *guard = self.config.shortcuts.clone();
+        }
+        InputHookManager::update_bound_mouse_mask(self.config.shortcuts.bound_mouse_mask());
+        let _ = self.config.save();
+        self.status_message = Some(msg.to_string());
+    }
 
-            let vk = COMMON_KEYS[self.draft_key_idx].1;
-            InputChord::key_press(mods, vk)
+    fn count_duplicate_bindings(&self, target: EditingShortcut) -> Option<String> {
+        let rows = [
+            (EditingShortcut::SpeakSelection, &self.config.shortcuts.speak_selection),
+            (EditingShortcut::PushToTalk, &self.config.shortcuts.push_to_talk),
+            (EditingShortcut::OpenHome, &self.config.shortcuts.open_home),
+            (EditingShortcut::ToggleBionic, &self.config.shortcuts.toggle_bionic),
+            (EditingShortcut::ToggleReader, &self.config.shortcuts.toggle_reader),
+        ];
+        let current = match target {
+            EditingShortcut::SpeakSelection => &self.config.shortcuts.speak_selection,
+            EditingShortcut::PushToTalk => &self.config.shortcuts.push_to_talk,
+            EditingShortcut::OpenHome => &self.config.shortcuts.open_home,
+            EditingShortcut::ToggleBionic => &self.config.shortcuts.toggle_bionic,
+            EditingShortcut::ToggleReader => &self.config.shortcuts.toggle_reader,
+        };
+
+        for (other_id, other) in rows {
+            if other_id == target {
+                continue;
+            }
+            if current.keyboard.matches(&other.keyboard) {
+                return Some(format!("Keyboard duplicates '{}'.", other_id.title()));
+            }
+            if let (Some(m1), Some(m2)) = (current.mouse_button(), other.mouse_button()) {
+                if m1 == m2 {
+                    return Some(format!("Mouse button duplicates '{}'.", other_id.title()));
+                }
+            }
+        }
+        None
+    }
+
+    fn render_keyboard_modal(&mut self, ctx: &egui::Context) {
+        let Some(target) = self.editing_keyboard else {
+            return;
+        };
+
+        let mut close_modal = false;
+        let mut save_binding = false;
+
+        egui::Window::new(format!("Change Keyboard Shortcut — {}", target.title()))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .fixed_size([430.0, 290.0])
+            .show(ctx, |ui| {
+                let note = if target.allows_single_key() {
+                    "Supports any 1-key shortcut (e.g. F9) or 2-4 key combo (e.g. Ctrl+Shift+S)."
+                } else {
+                    "Supports any 2-4 key combo (e.g. Ctrl+Space, Ctrl+Shift+Alt+P) or F1-F12."
+                };
+                ui.add(egui::Label::new(note).wrap(true));
+                ui.add_space(8.0);
+
+                // Live Key Capture Box
+                if self.capturing_live_key {
+                    ctx.input(|i| {
+                        for ev in &i.events {
+                            if let egui::Event::Key {
+                                key,
+                                pressed: true,
+                                modifiers,
+                                ..
+                            } = ev
+                            {
+                                // Bare Escape cancels capture mode rather than overwriting
+                                if *key == egui::Key::Escape
+                                    && !modifiers.ctrl
+                                    && !modifiers.shift
+                                    && !modifiers.alt
+                                {
+                                    self.capturing_live_key = false;
+                                    break;
+                                }
+                                if let Some(vk) = egui_key_to_vk(*key) {
+                                    self.draft_ctrl = modifiers.ctrl || modifiers.command;
+                                    self.draft_shift = modifiers.shift;
+                                    self.draft_alt = modifiers.alt;
+                                    self.draft_win = false;
+                                    self.draft_key_vk = vk;
+                                    self.capturing_live_key = false;
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                }
+
+                ui.group(|ui| {
+                    ui.set_width(400.0);
+                    ui.horizontal(|ui| {
+                        if self.capturing_live_key {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(80, 180, 255),
+                                "Listening... Press any key combination now!",
+                            );
+                            if ui.button("Stop").clicked() {
+                                self.capturing_live_key = false;
+                            }
+                        } else {
+                            ui.label("Live Key Capture:");
+                            if ui.button("Record Key Combo").clicked() {
+                                self.capturing_live_key = true;
+                            }
+                        }
+                    });
+                });
+
+                ui.add_space(8.0);
+
+                // Manual Modifier & Key Builder
+                ui.horizontal(|ui| {
+                    ui.label("Modifiers:");
+                    ui.checkbox(&mut self.draft_ctrl, "Ctrl");
+                    ui.checkbox(&mut self.draft_shift, "Shift");
+                    ui.checkbox(&mut self.draft_alt, "Alt");
+                    ui.checkbox(&mut self.draft_win, "Win");
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Trigger Key:");
+                    egui::ComboBox::from_id_source("modal_key_combo")
+                        .selected_text(vk_display_name(self.draft_key_vk))
+                        .show_ui(ui, |ui| {
+                            for &(name, vk) in &COMMON_KEYS {
+                                ui.selectable_value(&mut self.draft_key_vk, vk, name);
+                            }
+                        });
+                });
+
+                let draft_chord = self.build_keyboard_draft();
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label("Selected Chord:");
+                    ui.label(egui::RichText::new(draft_chord.to_string()).strong());
+                });
+
+                let validation =
+                    ShortcutCatalog::validate_for(&draft_chord, target.allows_single_key());
+                let can_save = match &validation {
+                    CollisionSeverity::Allowed => {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(46, 204, 113),
+                            "✓ Safe to bind",
+                        );
+                        true
+                    }
+                    CollisionSeverity::Warning(w) => {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!("Warning: {w}"))
+                                    .color(egui::Color32::from_rgb(241, 196, 15)),
+                            )
+                            .wrap(true),
+                        );
+                        true
+                    }
+                    CollisionSeverity::HardBlocked(b) => {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!("Blocked: {b}"))
+                                    .color(egui::Color32::from_rgb(231, 76, 60)),
+                            )
+                            .wrap(true),
+                        );
+                        false
+                    }
+                };
+
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(can_save, egui::Button::new("Save & Bind"))
+                        .clicked()
+                    {
+                        save_binding = true;
+                        close_modal = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        close_modal = true;
+                    }
+                });
+            });
+
+        if save_binding {
+            let new_chord = self.build_keyboard_draft();
+            self.binding_mut(target).keyboard = new_chord;
+            self.apply_and_save_shortcuts(&format!(
+                "Updated keyboard shortcut for {} (active immediately).",
+                target.title()
+            ));
+        }
+        if close_modal {
+            self.editing_keyboard = None;
+            self.capturing_live_key = false;
         }
     }
 }
@@ -134,157 +445,204 @@ impl eframe::App for SettingsDashboard {
             ui.label("Unified Windows Accessibility Suite (v0.2.0)");
             ui.separator();
 
-            // Tab Bar
-            ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.active_tab, DashboardTab::Shortcuts, "⌨ Shortcuts");
-                ui.selectable_value(&mut self.active_tab, DashboardTab::Voice, "🔊 Voice (Paradee)");
-                ui.selectable_value(&mut self.active_tab, DashboardTab::Bionic, "📖 Bionic Reader");
-                ui.selectable_value(&mut self.active_tab, DashboardTab::Dictation, "🎙 Dictation (STT)");
-                ui.selectable_value(&mut self.active_tab, DashboardTab::Browsers, "🌐 Browsers");
+            // Tab Bar (clean, zero unsupported tofu glyphs)
+            ui.horizontal_wrapped(|ui| {
+                ui.selectable_value(&mut self.active_tab, DashboardTab::Shortcuts, "Shortcuts");
+                ui.selectable_value(&mut self.active_tab, DashboardTab::Voice, "Voice (Paradee)");
+                ui.selectable_value(&mut self.active_tab, DashboardTab::Bionic, "Bionic Reader");
+                ui.selectable_value(&mut self.active_tab, DashboardTab::Dictation, "Dictation (STT)");
+                ui.selectable_value(&mut self.active_tab, DashboardTab::Browsers, "Browsers");
             });
             ui.separator();
 
-            match self.active_tab {
+            egui::ScrollArea::vertical().show(ui, |ui| match self.active_tab {
                 DashboardTab::Shortcuts => {
-                    ui.subheading("Global Shortcuts Configuration");
-                    ui.label("Customize 2 to 4 key composite chords, dedicated keys, or mouse side buttons.");
-                    ui.add_space(8.0);
+                    ui.subheading("Global Shortcuts (Keyboard + Mouse)");
+                    ui.label(
+                        "Every action supports BOTH an active keyboard shortcut (2-4 keys, or 1 key for Open Home)\nand an optional multi-button mouse binding simultaneously.",
+                    );
+                    ui.add_space(10.0);
 
-                    // If currently editing a shortcut, show interactive recorder
-                    if let Some(target) = self.editing_shortcut {
-                        let action_title = match target {
-                            EditingShortcut::SpeakSelection => "Speak Selection",
-                            EditingShortcut::PushToTalk => "Push-to-Talk (STT)",
-                            EditingShortcut::OpenHome => "Open Home Dashboard",
-                            EditingShortcut::ToggleBionic => "Toggle Bionic Reading",
-                            EditingShortcut::ToggleReader => "Toggle Reader View",
-                        };
+                    let mut open_kb_modal: Option<(EditingShortcut, InputChord)> = None;
+                    let mut mouse_changed = false;
 
-                        ui.group(|ui| {
-                            ui.label(egui::RichText::new(format!("Editing Shortcut: {action_title}")).strong());
-                            ui.separator();
+                    let col_w_action = 138.0;
+                    let col_w_kb = 188.0;
+                    let col_w_mouse = 228.0;
+                    let col_w_status = 185.0;
 
-                            ui.horizontal(|ui| {
-                                ui.radio_value(&mut self.draft_is_mouse, false, "Keyboard Shortcut");
-                                ui.radio_value(&mut self.draft_is_mouse, true, "Mouse Button");
+                    egui::Grid::new("shortcuts_grid")
+                        .num_columns(4)
+                        .striped(true)
+                        .spacing([10.0, 12.0])
+                        .show(ui, |ui| {
+                            // Header Row
+                            ui.allocate_ui(egui::vec2(col_w_action, 20.0), |ui| {
+                                ui.label(egui::RichText::new("Action").strong());
                             });
-
-                            if !self.draft_is_mouse {
-                                ui.horizontal(|ui| {
-                                    ui.label("Modifiers:");
-                                    ui.checkbox(&mut self.draft_ctrl, "Ctrl");
-                                    ui.checkbox(&mut self.draft_shift, "Shift");
-                                    ui.checkbox(&mut self.draft_alt, "Alt");
-                                    ui.checkbox(&mut self.draft_win, "Win");
-                                });
-
-                                ui.horizontal(|ui| {
-                                    ui.label("Key:");
-                                    egui::ComboBox::from_id_source("key_combo")
-                                        .selected_text(COMMON_KEYS[self.draft_key_idx].0)
-                                        .show_ui(ui, |ui| {
-                                            for (idx, &(name, _)) in COMMON_KEYS.iter().enumerate() {
-                                                ui.selectable_value(&mut self.draft_key_idx, idx, name);
-                                            }
-                                        });
-                                });
-                            } else {
-                                ui.horizontal(|ui| {
-                                    ui.label("Mouse Button:");
-                                    ui.radio_value(&mut self.draft_mouse_btn, 1, "MouseSide1 (Back)");
-                                    ui.radio_value(&mut self.draft_mouse_btn, 2, "MouseSide2 (Forward)");
-                                    ui.radio_value(&mut self.draft_mouse_btn, 3, "Middle Button");
-                                });
-
-                                ui.horizontal(|ui| {
-                                    ui.label("Hold Threshold:");
-                                    ui.add(egui::Slider::new(&mut self.draft_mouse_duration_ms, 100..=500).suffix(" ms"));
-                                });
-                            }
-
-                            let draft_chord = self.build_draft_chord();
-                            ui.add_space(6.0);
-                            ui.label(format!("Proposed: {}", draft_chord));
-
-                            // Collision check
-                            let validation = ShortcutCatalog::validate(&draft_chord);
-                            let can_save = match validation {
-                                crate::input::CollisionSeverity::Allowed => {
-                                    ui.colored_label(egui::Color32::from_rgb(46, 204, 113), "✓ Shortcut is valid and safe to use");
-                                    true
-                                }
-                                crate::input::CollisionSeverity::Warning(w) => {
-                                    ui.colored_label(egui::Color32::from_rgb(241, 196, 15), format!("⚠ Conflict: {w}"));
-                                    true
-                                }
-                                crate::input::CollisionSeverity::HardBlocked(b) => {
-                                    ui.colored_label(egui::Color32::from_rgb(231, 76, 60), format!("⛔ Reserved: {b}"));
-                                    false
-                                }
-                            };
-
-                            ui.horizontal(|ui| {
-                                if ui.add_enabled(can_save, egui::Button::new("Save & Bind")).clicked() {
-                                    match target {
-                                        EditingShortcut::SpeakSelection => self.config.shortcuts.speak_selection = draft_chord,
-                                        EditingShortcut::PushToTalk => self.config.shortcuts.push_to_talk = draft_chord,
-                                        EditingShortcut::OpenHome => self.config.shortcuts.open_home = draft_chord,
-                                        EditingShortcut::ToggleBionic => self.config.shortcuts.toggle_bionic = draft_chord,
-                                        EditingShortcut::ToggleReader => self.config.shortcuts.toggle_reader = draft_chord,
-                                    }
-                                    let _ = self.config.save();
-                                    self.editing_shortcut = None;
-                                    self.status_message = Some("Shortcut updated and saved.".to_string());
-                                }
-                                if ui.button("Cancel").clicked() {
-                                    self.editing_shortcut = None;
-                                }
+                            ui.allocate_ui(egui::vec2(col_w_kb, 20.0), |ui| {
+                                ui.label(egui::RichText::new("Keyboard Shortcut").strong());
                             });
-                        });
-                        ui.add_space(10.0);
-                    }
-
-                    let mut to_edit = None;
-                    // Shortcuts Table
-                    egui::Grid::new("shortcuts_grid").striped(true).min_col_width(160.0).show(ui, |ui| {
-                        ui.label(egui::RichText::new("Action").strong());
-                        ui.label(egui::RichText::new("Current Shortcut").strong());
-                        ui.label(egui::RichText::new("Status").strong());
-                        ui.label(egui::RichText::new("Action").strong());
-                        ui.end_row();
-
-                        let rows = [
-                            ("Speak Selection", EditingShortcut::SpeakSelection, &self.config.shortcuts.speak_selection),
-                            ("Push-to-Talk (STT)", EditingShortcut::PushToTalk, &self.config.shortcuts.push_to_talk),
-                            ("Open Home Dashboard", EditingShortcut::OpenHome, &self.config.shortcuts.open_home),
-                            ("Toggle Bionic Reading", EditingShortcut::ToggleBionic, &self.config.shortcuts.toggle_bionic),
-                            ("Toggle Reader View", EditingShortcut::ToggleReader, &self.config.shortcuts.toggle_reader),
-                        ];
-
-                        for (name, action, chord) in rows {
-                            ui.label(name);
-                            ui.label(chord.to_string());
-                            match ShortcutCatalog::validate(chord) {
-                                crate::input::CollisionSeverity::Allowed => {
-                                    ui.colored_label(egui::Color32::from_rgb(46, 204, 113), "✓ Safe");
-                                }
-                                crate::input::CollisionSeverity::Warning(w) => {
-                                    ui.colored_label(egui::Color32::from_rgb(241, 196, 15), format!("⚠ Conflict: {w}"));
-                                }
-                                crate::input::CollisionSeverity::HardBlocked(b) => {
-                                    ui.colored_label(egui::Color32::from_rgb(231, 76, 60), format!("⛔ Blocked: {b}"));
-                                }
-                            }
-                            if ui.button("Change").clicked() {
-                                to_edit = Some((action, chord.clone()));
-                            }
+                            ui.allocate_ui(egui::vec2(col_w_mouse, 20.0), |ui| {
+                                ui.label(egui::RichText::new("Mouse Button (Optional)").strong());
+                            });
+                            ui.allocate_ui(egui::vec2(col_w_status, 20.0), |ui| {
+                                ui.label(egui::RichText::new("Status").strong());
+                            });
                             ui.end_row();
-                        }
-                    });
 
-                    if let Some((action, chord)) = to_edit {
-                        self.init_draft_from_chord(&chord);
-                        self.editing_shortcut = Some(action);
+                            let targets = [
+                                EditingShortcut::SpeakSelection,
+                                EditingShortcut::PushToTalk,
+                                EditingShortcut::OpenHome,
+                                EditingShortcut::ToggleBionic,
+                                EditingShortcut::ToggleReader,
+                            ];
+
+                            for (idx, target) in targets.into_iter().enumerate() {
+                                let dup_warning = self.count_duplicate_bindings(target);
+                                let binding_snapshot = self.binding_mut(target).clone();
+
+                                // Col 1: Action Name
+                                ui.allocate_ui(egui::vec2(col_w_action, 28.0), |ui| {
+                                    ui.add(
+                                        egui::Label::new(egui::RichText::new(target.title()).strong())
+                                            .wrap(true),
+                                    );
+                                });
+
+                                // Col 2: Keyboard Binding + Change Button
+                                ui.allocate_ui(egui::vec2(col_w_kb, 28.0), |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.label(binding_snapshot.keyboard.to_string());
+                                        if ui.button("Change").clicked() {
+                                            open_kb_modal =
+                                                Some((target, binding_snapshot.keyboard.clone()));
+                                        }
+                                    });
+                                });
+
+                                // Col 3: Mouse Binding Dropdown + Hold Duration
+                                ui.allocate_ui(egui::vec2(col_w_mouse, 28.0), |ui| {
+                                    ui.horizontal(|ui| {
+                                        let mut selected_btn = binding_snapshot.mouse_button();
+                                        let mut hold_ms = binding_snapshot.mouse_hold_ms();
+
+                                        egui::ComboBox::from_id_source(format!("mouse_combo_{idx}"))
+                                            .width(128.0)
+                                            .selected_text(mouse_btn_label(selected_btn))
+                                            .show_ui(ui, |ui| {
+                                                ui.selectable_value(&mut selected_btn, None, "None");
+                                                ui.selectable_value(
+                                                    &mut selected_btn,
+                                                    Some(4),
+                                                    "Mouse 4 (Back)",
+                                                );
+                                                ui.selectable_value(
+                                                    &mut selected_btn,
+                                                    Some(5),
+                                                    "Mouse 5 (Forward)",
+                                                );
+                                                ui.selectable_value(
+                                                    &mut selected_btn,
+                                                    Some(3),
+                                                    "Mouse Middle",
+                                                );
+                                            });
+
+                                        if selected_btn != binding_snapshot.mouse_button() {
+                                            let default_hold = if target == EditingShortcut::PushToTalk {
+                                                200
+                                            } else {
+                                                0
+                                            };
+                                            self.binding_mut(target).mouse = selected_btn.map(|btn| {
+                                                InputChord::mouse_hold(
+                                                    btn,
+                                                    Duration::from_millis(default_hold),
+                                                )
+                                            });
+                                            mouse_changed = true;
+                                        } else if let Some(btn) = selected_btn {
+                                            ui.label("Hold:");
+                                            let resp = ui.add(
+                                                egui::DragValue::new(&mut hold_ms)
+                                                    .clamp_range(0..=500)
+                                                    .speed(5)
+                                                    .suffix(" ms"),
+                                            );
+                                            if resp.changed() {
+                                                self.binding_mut(target).mouse = Some(
+                                                    InputChord::mouse_hold(
+                                                        btn,
+                                                        Duration::from_millis(hold_ms),
+                                                    ),
+                                                );
+                                                mouse_changed = true;
+                                            }
+                                        }
+                                    });
+                                });
+
+                                // Col 4: Status with proper text wrapping
+                                ui.allocate_ui(egui::vec2(col_w_status, 28.0), |ui| {
+                                    ui.set_width(col_w_status);
+                                    let validation = ShortcutCatalog::validate_for(
+                                        &binding_snapshot.keyboard,
+                                        target.allows_single_key(),
+                                    );
+                                    match (validation, dup_warning) {
+                                        (CollisionSeverity::HardBlocked(b), _) => {
+                                            ui.add(
+                                                egui::Label::new(
+                                                    egui::RichText::new(format!("Blocked: {b}"))
+                                                        .color(egui::Color32::from_rgb(231, 76, 60)),
+                                                )
+                                                .wrap(true),
+                                            );
+                                        }
+                                        (CollisionSeverity::Warning(w), _) => {
+                                            ui.add(
+                                                egui::Label::new(
+                                                    egui::RichText::new(format!("Warning: {w}"))
+                                                        .color(egui::Color32::from_rgb(241, 196, 15)),
+                                                )
+                                                .wrap(true),
+                                            );
+                                        }
+                                        (CollisionSeverity::Allowed, Some(dup)) => {
+                                            ui.add(
+                                                egui::Label::new(
+                                                    egui::RichText::new(format!("Warning: {dup}"))
+                                                        .color(egui::Color32::from_rgb(241, 196, 15)),
+                                                )
+                                                .wrap(true),
+                                            );
+                                        }
+                                        (CollisionSeverity::Allowed, None) => {
+                                            ui.add(
+                                                egui::Label::new(
+                                                    egui::RichText::new("✓ Safe")
+                                                        .color(egui::Color32::from_rgb(46, 204, 113)),
+                                                )
+                                                .wrap(true),
+                                            );
+                                        }
+                                    }
+                                });
+
+                                ui.end_row();
+                            }
+                        });
+
+                    if let Some((target, kb_chord)) = open_kb_modal {
+                        self.init_keyboard_draft(&kb_chord);
+                        self.editing_keyboard = Some(target);
+                    }
+                    if mouse_changed {
+                        self.apply_and_save_shortcuts(
+                            "Mouse binding updated and saved (active immediately).",
+                        );
                     }
                 }
 
@@ -293,7 +651,7 @@ impl eframe::App for SettingsDashboard {
                     ui.label("Ultra-lightweight (8.5 MB) offline text-to-speech with natural prosody.");
                     ui.add_space(8.0);
 
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.label("Voice:");
                         let voices = [
                             ("bf_isabella", "Isabella (British Female)"),
@@ -312,14 +670,20 @@ impl eframe::App for SettingsDashboard {
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         ui.label("Speech Speed:");
-                        if ui.add(egui::Slider::new(&mut self.config.tts.speed, 0.6..=2.5).suffix("x")).changed() {
+                        if ui
+                            .add(egui::Slider::new(&mut self.config.tts.speed, 0.6..=2.5).suffix("x"))
+                            .changed()
+                        {
                             self.tts.set_speed(self.config.tts.speed);
                         }
                     });
 
                     ui.horizontal(|ui| {
                         ui.label("Volume:");
-                        if ui.add(egui::Slider::new(&mut self.config.tts.volume, 0.0..=1.0).suffix("")).changed() {
+                        if ui
+                            .add(egui::Slider::new(&mut self.config.tts.volume, 0.0..=1.0))
+                            .changed()
+                        {
                             self.tts.set_volume(self.config.tts.volume);
                         }
                     });
@@ -334,19 +698,28 @@ impl eframe::App for SettingsDashboard {
 
                 DashboardTab::Bionic => {
                     ui.subheading("ADHD Bionic Reading Settings");
-                    ui.label("Highlights the first few letters of words to guide the eye and improve reading focus.");
+                    ui.label(
+                        "Highlights the first few letters of words to guide the eye and improve reading focus.",
+                    );
                     ui.add_space(8.0);
 
                     ui.horizontal(|ui| {
                         ui.label("Fixation Ratio:");
-                        ui.add(egui::Slider::new(&mut self.config.bionic.fixation_ratio, 0.2..=0.8).suffix(""));
+                        ui.add(egui::Slider::new(&mut self.config.bionic.fixation_ratio, 0.2..=0.8));
                     });
 
                     ui.add_space(10.0);
                     ui.label("Native Windows Preview (In-Place Injection Format):");
                     let engine = crate::bionic::BionicEngine::new(self.config.bionic.fixation_ratio);
-                    let preview = engine.to_unicode_bionic("Reading is the cognitive process of looking at written symbols and translating them into meaning.");
-                    ui.colored_label(egui::Color32::from_rgb(100, 180, 255), preview);
+                    let preview = engine.to_unicode_bionic(
+                        "Reading is the cognitive process of looking at written symbols and translating them into meaning.",
+                    );
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(preview).color(egui::Color32::from_rgb(100, 180, 255)),
+                        )
+                        .wrap(true),
+                    );
                 }
 
                 DashboardTab::Dictation => {
@@ -354,7 +727,6 @@ impl eframe::App for SettingsDashboard {
                     ui.label("Completely offline, on-demand speech-to-text with zero cloud telemetry.");
                     ui.add_space(8.0);
 
-                    // Check live download state if receiver active
                     let mut is_downloading = false;
                     let mut current_progress = 0.0;
                     let mut dl_status = String::new();
@@ -363,7 +735,12 @@ impl eframe::App for SettingsDashboard {
                         let state = rx.borrow().clone();
                         match state {
                             DownloadState::NotInstalled => {}
-                            DownloadState::Downloading { progress, bytes_downloaded, total_bytes, speed_bps } => {
+                            DownloadState::Downloading {
+                                progress,
+                                bytes_downloaded,
+                                total_bytes,
+                                speed_bps,
+                            } => {
                                 is_downloading = true;
                                 current_progress = progress;
                                 dl_status = format!(
@@ -388,19 +765,30 @@ impl eframe::App for SettingsDashboard {
                         }
                     }
 
-                    let installed = ModelDownloader::is_model_installed() || self.config.stt.model_installed;
+                    let installed =
+                        ModelDownloader::is_model_installed() || self.config.stt.model_installed;
                     if installed {
-                        ui.colored_label(egui::Color32::from_rgb(46, 204, 113), "✓ Parakeet-TDT 0.6B Model is Installed & Ready");
-                        ui.label("Hold your Push-to-Talk shortcut or side mouse button to dictate anywhere on Windows.");
+                        ui.colored_label(
+                            egui::Color32::from_rgb(46, 204, 113),
+                            "✓ Parakeet-TDT 0.6B Model is Installed & Ready",
+                        );
+                        ui.label(
+                            "Hold your Push-to-Talk mouse button or press your keyboard shortcut to dictate anywhere on Windows.",
+                        );
                     } else if is_downloading {
                         ui.label("Downloading NVIDIA Parakeet-TDT 0.6B model:");
                         ui.add(egui::ProgressBar::new(current_progress).show_percentage());
                         ui.label(&dl_status);
-                        ctx.request_repaint(); // Request next frame update while downloading
+                        ctx.request_repaint();
                     } else {
-                        ui.colored_label(egui::Color32::from_rgb(230, 126, 34), "Model is not yet downloaded (~600 MB INT8 ONNX)");
-                        ui.label("Speech-to-text runs entirely offline on your GPU/CPU once downloaded.");
-                        if ui.button("⬇ Download Model Now").clicked() {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(230, 126, 34),
+                            "Model is not yet downloaded (~600 MB INT8 ONNX)",
+                        );
+                        ui.label(
+                            "Speech-to-text runs entirely offline on your GPU/CPU once downloaded.",
+                        );
+                        if ui.button("Download Model Now").clicked() {
                             let (downloader, rx) = ModelDownloader::new();
                             self.stt_rx = Some(rx);
                             let dl = Arc::new(downloader);
@@ -413,31 +801,36 @@ impl eframe::App for SettingsDashboard {
 
                 DashboardTab::Browsers => {
                     ui.subheading("Multi-Browser Extension Manager");
-                    ui.label("Detected browsers and 1-click extension load helpers:");
+                    ui.label("Detected browsers and unpacked extension loader folders:");
                     ui.add_space(8.0);
 
                     for b in &self.browsers {
                         ui.group(|ui| {
                             ui.label(egui::RichText::new(b.name).strong());
-                            ui.label(format!("Extension Path: {:?}", b.extension_folder));
+                            ui.add(
+                                egui::Label::new(format!("Extension Path: {:?}", b.extension_folder))
+                                    .wrap(true),
+                            );
                             ui.label(format!("Helper URL: {}", b.install_url));
                         });
                     }
                 }
-            }
+            });
 
-            ui.add_space(16.0);
+            ui.add_space(12.0);
             ui.separator();
             ui.horizontal(|ui| {
-                if ui.button("💾 Save Settings").clicked() {
-                    let _ = self.config.save();
-                    self.status_message = Some("Settings saved successfully.".to_string());
+                if ui.button("Save All Settings").clicked() {
+                    self.apply_and_save_shortcuts("All settings saved successfully.");
                 }
                 if let Some(msg) = &self.status_message {
-                    ui.label(msg);
+                    ui.colored_label(egui::Color32::from_rgb(100, 200, 255), msg);
                 }
             });
         });
+
+        // Render modal keyboard shortcut editor if open
+        self.render_keyboard_modal(ctx);
     }
 }
 

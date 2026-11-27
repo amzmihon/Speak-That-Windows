@@ -15,7 +15,8 @@ irm https://raw.githubusercontent.com/amzmihon/Speak-That-Windows/main/install.p
 
 🌐 **Official Website**: [https://amzmihon.com/Speak-That-Windows](https://amzmihon.com/Speak-That-Windows)  
 🐙 **Source Code**: [https://github.com/amzmihon/Speak-That-Windows](https://github.com/amzmihon/Speak-That-Windows)  
-🚀 **Latest Release**: [SpeakThat v1.2.0](https://github.com/amzmihon/Speak-That-Windows/releases/latest)
+🚀 **Latest Release**: [SpeakThat v1.2.0](https://github.com/amzmihon/Speak-That-Windows/releases/latest)  
+📘 **Project Knowledge & Dev Log**: [knowledge.md](knowledge.md)
 
 ---
 
@@ -188,6 +189,7 @@ Speak-That-Windows/
 ├── main.py                  # Application entry point
 ├── run.bat                  # Developer launch script
 ├── CONTRIBUTING.md          # Development and contribution guide
+├── knowledge.md             # Project knowledge base, architecture notes & dev conversation log
 ├── LICENSE                  # MIT License
 ├── requirements.txt         # Dependencies
 └── README.md                # Documentation
@@ -220,7 +222,7 @@ Settings are automatically persisted to `config.json`:
 
 ## 🤝 Contributing
 
-We welcome bug reports, UI enhancements, and new feature contributions! Please read our [**Contributing Guide**](CONTRIBUTING.md) to get started.
+We welcome bug reports, UI enhancements, and new feature contributions! Please read our [**Contributing Guide**](CONTRIBUTING.md) and [**Project Knowledge Base (`knowledge.md`)**](knowledge.md) for architecture notes, development history, and unified Rust + Browser Extension context.
 
 ---
 
