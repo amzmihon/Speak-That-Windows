@@ -48,6 +48,11 @@ impl ShortcutCatalog {
             }
 
             // --- HARD BLOCKS (Exact modifier-set matching for Windows OS Critical) ---
+            if exact_mods(false, false, false, true) && vk == 0x20 {
+                return CollisionSeverity::HardBlocked(
+                    "Win + Space is reserved by Windows (Keyboard Layout Switcher).".into(),
+                );
+            }
             if exact_mods(false, false, false, true) && vk == 0x4C {
                 return CollisionSeverity::HardBlocked("Win + L is reserved by Windows (Lock).".into());
             }
@@ -150,6 +155,15 @@ mod tests {
         let ctrl_shift_s = InputChord::key_press(vec![ModifierKey::Control, ModifierKey::Shift], 0x53);
         assert!(matches!(ShortcutCatalog::validate(&ctrl_s), CollisionSeverity::Warning(_)));
         assert_eq!(ShortcutCatalog::validate(&ctrl_shift_s), CollisionSeverity::Allowed);
+    }
+
+    #[test]
+    fn win_space_is_hard_blocked() {
+        let win_space = InputChord::key_press(vec![ModifierKey::Win], 0x20);
+        assert!(matches!(
+            ShortcutCatalog::validate(&win_space),
+            CollisionSeverity::HardBlocked(_)
+        ));
     }
 
     #[test]

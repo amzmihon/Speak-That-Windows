@@ -1,23 +1,25 @@
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 use windows::Win32::Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, TranslateMessage,
     UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, MSLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL,
-    WH_MOUSE_LL, WM_KEYDOWN, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_SYSKEYDOWN, WM_XBUTTONDOWN,
-    WM_XBUTTONUP,
+    WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_SYSKEYDOWN,
+    WM_SYSKEYUP, WM_XBUTTONDOWN, WM_XBUTTONUP,
 };
 
 use super::chord::{InputChord, ModifierKey};
 
+const LLKHF_INJECTED_FLAG: u32 = 0x10;
+
 #[derive(Debug, Clone)]
 pub enum HookEvent {
     ChordTriggered(InputChord),
-    MouseButtonDown(u32),          // 3: Middle, 4: XButton1 (Back), 5: XButton2 (Forward)
+    MouseButtonDown(u32), // 3: Middle, 4: XButton1 (Back), 5: XButton2 (Forward)
     MouseButtonUp(u32, Duration),
 }
 
@@ -82,6 +84,12 @@ impl InputHookManager {
 
 static mut GLOBAL_HOOK_TX: Option<mpsc::UnboundedSender<HookEvent>> = None;
 static BOUND_MOUSE_MASK: AtomicU32 = AtomicU32::new(0);
+static HELD_KEYS_BITMAP: [AtomicU64; 4] = [
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+];
 static MOUSE_DOWN_TIME_MS: [AtomicU32; 8] = [
     AtomicU32::new(0),
     AtomicU32::new(0),
@@ -103,6 +111,25 @@ fn is_modifier_vk(vk: u16) -> bool {
     )
 }
 
+/// Marks `vk` as held; returns `true` if it was ALREADY held (OS key repeat).
+fn mark_key_down_and_was_held(vk: u16) -> bool {
+    let idx = (vk as usize) / 64;
+    if idx >= HELD_KEYS_BITMAP.len() {
+        return false;
+    }
+    let bit = 1u64 << ((vk as usize) % 64);
+    let prev = HELD_KEYS_BITMAP[idx].fetch_or(bit, Ordering::SeqCst);
+    (prev & bit) != 0
+}
+
+fn mark_key_up(vk: u16) {
+    let idx = (vk as usize) / 64;
+    if idx < HELD_KEYS_BITMAP.len() {
+        let bit = 1u64 << ((vk as usize) % 64);
+        HELD_KEYS_BITMAP[idx].fetch_and(!bit, Ordering::SeqCst);
+    }
+}
+
 unsafe extern "system" fn low_level_keyboard_proc(
     n_code: i32,
     w_param: WPARAM,
@@ -110,13 +137,20 @@ unsafe extern "system" fn low_level_keyboard_proc(
 ) -> LRESULT {
     if n_code >= 0 {
         let msg = w_param.0 as u32;
+        let kbd = *(l_param.0 as *const KBDLLHOOKSTRUCT);
 
-        if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
-            let kbd = *(l_param.0 as *const KBDLLHOOKSTRUCT);
-            let vk = kbd.vkCode as u16;
+        // Ignore synthetic/injected keystrokes (so our own Ctrl+C or TextInjector never feeds back)
+        if (kbd.flags.0 & LLKHF_INJECTED_FLAG) != 0 {
+            return CallNextHookEx(HHOOK(std::ptr::null_mut()), n_code, w_param, l_param);
+        }
 
-            // Only evaluate chord when a non-modifier key is pressed
-            if !is_modifier_vk(vk) {
+        let vk = kbd.vkCode as u16;
+
+        if msg == WM_KEYUP || msg == WM_SYSKEYUP {
+            mark_key_up(vk);
+        } else if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
+            // Only evaluate chord when a non-modifier key is freshly pressed (skip OS auto-repeat)
+            if !is_modifier_vk(vk) && !mark_key_down_and_was_held(vk) {
                 let ctrl_down = (GetAsyncKeyState(0x11) as u16 & 0x8000) != 0
                     || (GetAsyncKeyState(0xA2) as u16 & 0x8000) != 0
                     || (GetAsyncKeyState(0xA3) as u16 & 0x8000) != 0;
@@ -148,7 +182,7 @@ unsafe extern "system" fn low_level_keyboard_proc(
                 }
 
                 let chord = InputChord::key_press(modifiers, vk);
-                debug!("Hook captured key chord: {}", chord);
+                trace!("Hook captured key chord: {}", chord);
 
                 if let Some(ref tx) = GLOBAL_HOOK_TX {
                     let _ = tx.send(HookEvent::ChordTriggered(chord));
@@ -209,7 +243,7 @@ unsafe extern "system" fn low_level_mouse_proc(
                         ));
                     }
                 }
-                // Intercept bound mouse button event so browser Back/Forward or Middle scroll don't fire
+                // Intercept both DOWN and UP for bound mouse buttons so target apps do not navigate Back or lose selection
                 return LRESULT(1);
             }
         }

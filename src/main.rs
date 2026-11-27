@@ -34,9 +34,23 @@ fn format_binding_log(binding: &ActionBinding) -> String {
     }
 }
 
-fn trigger_speak_selection(tts: Arc<TtsEngine>) {
+struct InFlightReset(Arc<AtomicBool>);
+
+impl Drop for InFlightReset {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+fn trigger_speak_selection(tts: Arc<TtsEngine>, in_flight: Arc<AtomicBool>) {
+    if in_flight.swap(true, Ordering::SeqCst) {
+        tracing::debug!("Speak Selection capture already in flight; debouncing duplicate trigger.");
+        return;
+    }
+
     tokio::spawn(async move {
-        match SelectionCapture::capture_selected_text_synthetic(Duration::from_millis(150)).await {
+        let _reset = InFlightReset(in_flight);
+        match SelectionCapture::capture_selected_text_synthetic(Duration::from_millis(300)).await {
             Ok(text) => {
                 info!("Captured selected text: {} chars", text.len());
                 tts.speak(&text);
@@ -201,6 +215,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let loop_mic = Arc::clone(&mic_manager);
     let loop_ratio = config.bionic.fixation_ratio;
     let ptt_kb_active = Arc::new(AtomicBool::new(false));
+    let speak_in_flight = Arc::new(AtomicBool::new(false));
 
     rt.spawn(async move {
         while let Some(event) = event_rx.recv().await {
@@ -208,11 +223,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             match event {
                 HookEvent::ChordTriggered(chord) => {
-                    info!("Hook event received key chord: {}", chord);
+                    tracing::trace!("Key chord event received: {}", chord);
 
                     if shortcuts.speak_selection.matches_keyboard(&chord) {
                         info!("🔥 [HOTKEY MATCHED] Speak Selection (Keyboard): {}", chord);
-                        trigger_speak_selection(Arc::clone(&loop_tts));
+                        trigger_speak_selection(Arc::clone(&loop_tts), Arc::clone(&speak_in_flight));
                     } else if shortcuts.stop_speaking.matches_keyboard(&chord) {
                         info!("🔥 [HOTKEY MATCHED] Stop Speaking: {}", chord);
                         loop_tts.stop();
@@ -242,12 +257,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             );
                             loop_mic.on_ptt_release();
                         }
-                    } else {
-                        tracing::debug!("Key chord '{}' received (no shortcut match)", chord);
                     }
                 }
                 HookEvent::MouseButtonDown(btn) => {
-                    info!("🔥 [MOUSE DOWN] Button {} pressed", btn);
+                    tracing::debug!("Mouse button {} pressed", btn);
                     if shortcuts.push_to_talk.matches_mouse(btn) {
                         info!(
                             "🔥 [HOTKEY MATCHED] Push-to-Talk Dictation (Mouse Button {}): Start Listening",
@@ -258,7 +271,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 HookEvent::MouseButtonUp(btn, duration) => {
                     let dur_ms = duration.as_millis() as u64;
-                    info!("🔥 [MOUSE UP] Button {} released after {}ms", btn, dur_ms);
+                    tracing::debug!("Mouse button {} released after {}ms", btn, dur_ms);
 
                     if shortcuts.push_to_talk.matches_mouse(btn) {
                         let threshold = shortcuts.push_to_talk.mouse_hold_ms();
@@ -274,7 +287,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "🔥 [HOTKEY MATCHED] Speak Selection (Mouse Button {}, {}ms >= {}ms)",
                                 btn, dur_ms, threshold
                             );
-                            trigger_speak_selection(Arc::clone(&loop_tts));
+                            trigger_speak_selection(
+                                Arc::clone(&loop_tts),
+                                Arc::clone(&speak_in_flight),
+                            );
                         } else {
                             info!(
                                 "Mouse Button {} released before {}ms hold threshold ({}ms)",
