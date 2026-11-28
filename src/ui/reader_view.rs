@@ -69,10 +69,8 @@ impl ReaderViewWindow {
             tts,
         }
     }
-}
 
-impl eframe::App for ReaderViewWindow {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    pub fn render_ui(&mut self, ctx: &egui::Context) {
         // Handle Escape key to exit
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -200,5 +198,11 @@ impl eframe::App for ReaderViewWindow {
                 }
             });
         });
+    }
+}
+
+impl eframe::App for ReaderViewWindow {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.render_ui(ctx);
     }
 }

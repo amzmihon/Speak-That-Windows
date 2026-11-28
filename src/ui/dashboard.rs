@@ -1,5 +1,6 @@
 use eframe::egui;
-use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use tokio::sync::watch;
 
@@ -10,6 +11,7 @@ use crate::input::{
     CollisionSeverity, InputChord, InputHookManager, ModifierKey, ShortcutCatalog, TriggerSource,
 };
 use crate::ui::browser_detect::{BrowserDetector, InstalledBrowser};
+use crate::ui::reader_view::ReaderViewWindow;
 
 /// Loads Windows Segoe UI / Symbol / Emoji fonts into egui as fallbacks so no missing-glyph boxes appear.
 pub fn configure_windows_fonts(ctx: &egui::Context) {
@@ -37,7 +39,7 @@ pub fn configure_windows_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 enum DashboardTab {
     Shortcuts,
     Voice,
@@ -76,12 +78,17 @@ impl EditingShortcut {
 pub struct SettingsDashboard {
     config: AppConfig,
     shared_shortcuts: Arc<RwLock<ShortcutConfig>>,
+    show_dashboard_req: Arc<AtomicBool>,
+    quit_requested: Arc<AtomicBool>,
+    reader_request: Arc<Mutex<Option<String>>>,
+    reader_window: Option<ReaderViewWindow>,
     active_tab: DashboardTab,
     tts: Arc<TtsEngine>,
     browsers: Vec<InstalledBrowser>,
     test_text: String,
     stt_rx: Option<watch::Receiver<DownloadState>>,
     status_message: Option<String>,
+    app_icon: Option<Arc<egui::IconData>>,
     // Modal keyboard editor state
     editing_keyboard: Option<EditingShortcut>,
     capturing_live_key: bool,
@@ -166,23 +173,38 @@ fn mouse_btn_label(btn: Option<u32>) -> &'static str {
 }
 
 impl SettingsDashboard {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         config: AppConfig,
         shared_shortcuts: Arc<RwLock<ShortcutConfig>>,
+        shared_ctx: Arc<RwLock<Option<egui::Context>>>,
+        show_dashboard_req: Arc<AtomicBool>,
+        quit_requested: Arc<AtomicBool>,
+        reader_request: Arc<Mutex<Option<String>>>,
         tts: Arc<TtsEngine>,
+        app_icon: Option<Arc<egui::IconData>>,
     ) -> Self {
         configure_windows_fonts(&cc.egui_ctx);
+        tts.set_egui_ctx(cc.egui_ctx.clone());
+        if let Ok(mut guard) = shared_ctx.write() {
+            *guard = Some(cc.egui_ctx.clone());
+        }
         let browsers = BrowserDetector::detect_all();
         Self {
             config,
             shared_shortcuts,
+            show_dashboard_req,
+            quit_requested,
+            reader_request,
+            reader_window: None,
             active_tab: DashboardTab::Shortcuts,
             tts,
             browsers,
             test_text: "Hello! This is offline neural speech powered by Paradee 8M.".to_string(),
             stt_rx: None,
             status_message: None,
+            app_icon,
             editing_keyboard: None,
             capturing_live_key: false,
             draft_ctrl: true,
@@ -298,7 +320,6 @@ impl SettingsDashboard {
                 ui.add(egui::Label::new(note).wrap(true));
                 ui.add_space(8.0);
 
-                // Live Key Capture Box
                 if self.capturing_live_key {
                     ctx.input(|i| {
                         for ev in &i.events {
@@ -309,7 +330,6 @@ impl SettingsDashboard {
                                 ..
                             } = ev
                             {
-                                // Bare Escape cancels capture mode rather than overwriting
                                 if *key == egui::Key::Escape
                                     && !modifiers.ctrl
                                     && !modifiers.shift
@@ -354,7 +374,6 @@ impl SettingsDashboard {
 
                 ui.add_space(8.0);
 
-                // Manual Modifier & Key Builder
                 ui.horizontal(|ui| {
                     ui.label("Modifiers:");
                     ui.checkbox(&mut self.draft_ctrl, "Ctrl");
@@ -385,10 +404,7 @@ impl SettingsDashboard {
                     ShortcutCatalog::validate_for(&draft_chord, target.allows_single_key());
                 let can_save = match &validation {
                     CollisionSeverity::Allowed => {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(46, 204, 113),
-                            "✓ Safe to bind",
-                        );
+                        ui.colored_label(egui::Color32::from_rgb(46, 204, 113), "✓ Safe to bind");
                         true
                     }
                     CollisionSeverity::Warning(w) => {
@@ -441,16 +457,101 @@ impl SettingsDashboard {
             self.capturing_live_key = false;
         }
     }
+
+    fn render_secondary_viewports(&mut self, ctx: &egui::Context) {
+        // Native Reader View secondary viewport (Alt + R)
+        if let Ok(mut guard) = self.reader_request.lock() {
+            if let Some(text) = guard.take() {
+                self.reader_window = Some(ReaderViewWindow::new(
+                    text,
+                    Arc::clone(&self.tts),
+                    self.config.bionic.fixation_ratio,
+                ));
+            }
+        }
+
+        if let Some(ref mut rw) = self.reader_window {
+            let reader_id = egui::ViewportId::from_hash_of("speakthat_reader");
+            let mut reader_vp = egui::ViewportBuilder::default()
+                .with_title("SpeakThat Native Reader View")
+                .with_inner_size([820.0, 620.0])
+                .with_min_inner_size([520.0, 420.0]);
+            if let Some(ref icon) = self.app_icon {
+                reader_vp = reader_vp.with_icon(Arc::clone(icon));
+            }
+
+            let mut should_close = false;
+            ctx.show_viewport_immediate(reader_id, reader_vp, |reader_ctx, _class| {
+                if reader_ctx.input(|i| i.viewport().close_requested() || i.key_pressed(egui::Key::Escape)) {
+                    should_close = true;
+                } else {
+                    rw.render_ui(reader_ctx);
+                }
+            });
+
+            if should_close {
+                ctx.send_viewport_cmd_to(reader_id, egui::ViewportCommand::Close);
+                self.reader_window = None;
+            }
+        }
+    }
 }
 
 impl eframe::App for SettingsDashboard {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+        // Explicit app termination via System Tray -> Exit SpeakThat
+        if self.quit_requested.load(Ordering::SeqCst) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+
+        // Restore & focus when requested by System Tray or Open Home Dashboard hotkey
+        if self.show_dashboard_req.swap(false, Ordering::SeqCst) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+
+        // Close-to-tray: hide window instead of terminating process
+        if ctx.input(|i| i.viewport().close_requested()) && !self.quit_requested.load(Ordering::SeqCst)
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
+
+        // Keep secondary viewports (Floating Stop Pill HUD & Reader View) updated even if Dashboard is hidden
+        self.render_secondary_viewports(ctx);
+
+        // Pinned Footer Panel (always anchored to window bottom on every tab)
+        egui::TopBottomPanel::bottom("footer_panel")
+            .frame(
+                egui::Frame::side_top_panel(&ctx.style())
+                    .inner_margin(egui::Margin::symmetric(16.0, 10.0)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("Save All Settings").clicked() {
+                        self.tts.set_voice(&self.config.tts.voice_id);
+                        self.tts.set_speed(self.config.tts.speed);
+                        self.tts.set_volume(self.config.tts.volume);
+                        self.apply_and_save_shortcuts("All settings saved successfully.");
+                    }
+                    if let Some(msg) = &self.status_message {
+                        ui.colored_label(egui::Color32::from_rgb(100, 200, 255), msg);
+                    }
+                });
+            });
+
+        let panel_frame = egui::Frame::central_panel(&ctx.style())
+            .inner_margin(egui::Margin::same(16.0));
+
+        egui::CentralPanel::default().frame(panel_frame).show(ctx, |ui| {
             ui.heading("SpeakThat + ADHD Bionic Reader Settings");
-            ui.label("Unified Windows Accessibility Suite (v0.2.0)");
+            ui.label("Unified Windows Accessibility Suite (v0.2.1 · Pure Rust)");
+            ui.add_space(4.0);
             ui.separator();
 
-            // Tab Bar (clean, zero unsupported tofu glyphs)
+            let prev_tab = self.active_tab;
             ui.horizontal_wrapped(|ui| {
                 ui.selectable_value(&mut self.active_tab, DashboardTab::Shortcuts, "Shortcuts");
                 ui.selectable_value(&mut self.active_tab, DashboardTab::Voice, "Voice (Paradee)");
@@ -458,7 +559,11 @@ impl eframe::App for SettingsDashboard {
                 ui.selectable_value(&mut self.active_tab, DashboardTab::Dictation, "Dictation (STT)");
                 ui.selectable_value(&mut self.active_tab, DashboardTab::Browsers, "Browsers");
             });
+            if self.active_tab != prev_tab {
+                self.status_message = None;
+            }
             ui.separator();
+            ui.add_space(6.0);
 
             egui::ScrollArea::vertical().show(ui, |ui| match self.active_tab {
                 DashboardTab::Shortcuts => {
@@ -481,7 +586,6 @@ impl eframe::App for SettingsDashboard {
                         .striped(true)
                         .spacing([10.0, 12.0])
                         .show(ui, |ui| {
-                            // Header Row
                             ui.allocate_ui(egui::vec2(col_w_action, 20.0), |ui| {
                                 ui.label(egui::RichText::new("Action").strong());
                             });
@@ -509,7 +613,6 @@ impl eframe::App for SettingsDashboard {
                                 let dup_warning = self.count_duplicate_bindings(target);
                                 let binding_snapshot = self.binding_mut(target).clone();
 
-                                // Col 1: Action Name
                                 ui.allocate_ui(egui::vec2(col_w_action, 28.0), |ui| {
                                     ui.add(
                                         egui::Label::new(egui::RichText::new(target.title()).strong())
@@ -517,7 +620,6 @@ impl eframe::App for SettingsDashboard {
                                     );
                                 });
 
-                                // Col 2: Keyboard Binding + Change Button
                                 ui.allocate_ui(egui::vec2(col_w_kb, 28.0), |ui| {
                                     ui.horizontal(|ui| {
                                         ui.label(binding_snapshot.keyboard.to_string());
@@ -528,7 +630,6 @@ impl eframe::App for SettingsDashboard {
                                     });
                                 });
 
-                                // Col 3: Mouse Binding Dropdown + Hold Duration
                                 ui.allocate_ui(egui::vec2(col_w_mouse, 28.0), |ui| {
                                     ui.horizontal(|ui| {
                                         let mut selected_btn = binding_snapshot.mouse_button();
@@ -557,15 +658,10 @@ impl eframe::App for SettingsDashboard {
                                             });
 
                                         if selected_btn != binding_snapshot.mouse_button() {
-                                            let default_hold = if target == EditingShortcut::PushToTalk {
-                                                200
-                                            } else {
-                                                0
-                                            };
                                             self.binding_mut(target).mouse = selected_btn.map(|btn| {
                                                 InputChord::mouse_hold(
                                                     btn,
-                                                    Duration::from_millis(default_hold),
+                                                    Duration::from_millis(0),
                                                 )
                                             });
                                             mouse_changed = true;
@@ -590,7 +686,6 @@ impl eframe::App for SettingsDashboard {
                                     });
                                 });
 
-                                // Col 4: Status with proper text wrapping
                                 ui.allocate_ui(egui::vec2(col_w_status, 28.0), |ui| {
                                     ui.set_width(col_w_status);
                                     let validation = ShortcutCatalog::validate_for(
@@ -654,11 +749,11 @@ impl eframe::App for SettingsDashboard {
 
                 DashboardTab::Voice => {
                     ui.subheading("Paradee 8M Neural Text-to-Speech");
-                    ui.label("Ultra-lightweight (8.5 MB) offline text-to-speech with natural prosody.");
-                    ui.add_space(8.0);
+                    ui.label("Ultra-lightweight (8.5 MB) pure-Rust offline text-to-speech with natural prosody.");
+                    ui.add_space(10.0);
 
                     ui.horizontal_wrapped(|ui| {
-                        ui.label("Voice:");
+                        ui.label(egui::RichText::new("Voice:").strong());
                         let voices = [
                             ("bf_isabella", "Isabella (British Female)"),
                             ("af_heart", "Heart (American Female)"),
@@ -673,33 +768,48 @@ impl eframe::App for SettingsDashboard {
                         }
                     });
 
-                    ui.add_space(8.0);
+                    ui.add_space(10.0);
+                    egui::Grid::new("voice_sliders_grid")
+                        .num_columns(2)
+                        .spacing([16.0, 10.0])
+                        .show(ui, |ui| {
+                            ui.spacing_mut().slider_width = 260.0;
+
+                            ui.label(egui::RichText::new("Speech Speed:").strong());
+                            if ui
+                                .add(egui::Slider::new(&mut self.config.tts.speed, 0.6..=2.5).suffix("x"))
+                                .changed()
+                            {
+                                self.tts.set_speed(self.config.tts.speed);
+                            }
+                            ui.end_row();
+
+                            ui.label(egui::RichText::new("Volume:").strong());
+                            if ui
+                                .add(egui::Slider::new(&mut self.config.tts.volume, 0.0..=1.0))
+                                .changed()
+                            {
+                                self.tts.set_volume(self.config.tts.volume);
+                            }
+                            ui.end_row();
+                        });
+
+                    ui.add_space(14.0);
+                    ui.label(egui::RichText::new("Test Playback:").strong());
+                    ui.add_space(4.0);
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.test_text)
+                            .desired_width(f32::INFINITY),
+                    );
+                    ui.add_space(6.0);
                     ui.horizontal(|ui| {
-                        ui.label("Speech Speed:");
-                        if ui
-                            .add(egui::Slider::new(&mut self.config.tts.speed, 0.6..=2.5).suffix("x"))
-                            .changed()
-                        {
-                            self.tts.set_speed(self.config.tts.speed);
+                        if ui.button("▶ Listen to Preview").clicked() {
+                            self.tts.speak(&self.test_text);
+                        }
+                        if ui.button("⏹ Stop").clicked() {
+                            self.tts.stop();
                         }
                     });
-
-                    ui.horizontal(|ui| {
-                        ui.label("Volume:");
-                        if ui
-                            .add(egui::Slider::new(&mut self.config.tts.volume, 0.0..=1.0))
-                            .changed()
-                        {
-                            self.tts.set_volume(self.config.tts.volume);
-                        }
-                    });
-
-                    ui.add_space(12.0);
-                    ui.label("Test Playback:");
-                    ui.text_edit_singleline(&mut self.test_text);
-                    if ui.button("▶ Listen to Preview").clicked() {
-                        self.tts.speak(&self.test_text);
-                    }
                 }
 
                 DashboardTab::Bionic => {
@@ -707,15 +817,17 @@ impl eframe::App for SettingsDashboard {
                     ui.label(
                         "Highlights the first few letters of words to guide the eye and improve reading focus.",
                     );
-                    ui.add_space(8.0);
+                    ui.add_space(10.0);
 
                     ui.horizontal(|ui| {
-                        ui.label("Fixation Ratio:");
+                        ui.spacing_mut().slider_width = 240.0;
+                        ui.label(egui::RichText::new("Fixation Ratio:").strong());
                         ui.add(egui::Slider::new(&mut self.config.bionic.fixation_ratio, 0.2..=0.8));
                     });
 
-                    ui.add_space(10.0);
-                    ui.label("Native Windows Preview (In-Place Injection Format):");
+                    ui.add_space(12.0);
+                    ui.label(egui::RichText::new("Native Windows Preview (In-Place Injection Format):").strong());
+                    ui.add_space(4.0);
                     let engine = crate::bionic::BionicEngine::new(self.config.bionic.fixation_ratio);
                     let preview = engine.to_unicode_bionic(
                         "Reading is the cognitive process of looking at written symbols and translating them into meaning.",
@@ -731,7 +843,7 @@ impl eframe::App for SettingsDashboard {
                 DashboardTab::Dictation => {
                     ui.subheading("Offline Speech-to-Text (NVIDIA Parakeet-TDT 0.6B v3)");
                     ui.label("Completely offline, on-demand speech-to-text with zero cloud telemetry.");
-                    ui.add_space(8.0);
+                    ui.add_space(10.0);
 
                     let mut is_downloading = false;
                     let mut current_progress = 0.0;
@@ -779,7 +891,7 @@ impl eframe::App for SettingsDashboard {
                             "✓ Parakeet-TDT 0.6B Model is Installed & Ready",
                         );
                         ui.label(
-                            "Hold your Push-to-Talk mouse button or press your keyboard shortcut to dictate anywhere on Windows.",
+                            "Click Mouse 5 or press your Push-to-Talk keyboard shortcut to start/stop dictation anywhere on Windows.",
                         );
                     } else if is_downloading {
                         ui.label("Downloading NVIDIA Parakeet-TDT 0.6B model:");
@@ -794,6 +906,7 @@ impl eframe::App for SettingsDashboard {
                         ui.label(
                             "Speech-to-text runs entirely offline on your GPU/CPU once downloaded.",
                         );
+                        ui.add_space(6.0);
                         if ui.button("Download Model Now").clicked() {
                             let (downloader, rx) = ModelDownloader::new();
                             self.stt_rx = Some(rx);
@@ -808,34 +921,53 @@ impl eframe::App for SettingsDashboard {
                 DashboardTab::Browsers => {
                     ui.subheading("Multi-Browser Extension Manager");
                     ui.label("Detected browsers and unpacked extension loader folders:");
-                    ui.add_space(8.0);
+                    ui.add_space(10.0);
 
+                    let card_width = (ui.available_width() - 16.0).max(400.0);
                     for b in &self.browsers {
-                        ui.group(|ui| {
-                            ui.label(egui::RichText::new(b.name).strong());
-                            ui.add(
-                                egui::Label::new(format!("Extension Path: {:?}", b.extension_folder))
-                                    .wrap(true),
-                            );
-                            ui.label(format!("Helper URL: {}", b.install_url));
-                        });
+                        let ext_str = b.extension_folder.display().to_string();
+                        egui::Frame::group(ui.style())
+                            .inner_margin(egui::Margin::same(12.0))
+                            .show(ui, |ui| {
+                                ui.set_min_width(card_width);
+                                ui.label(egui::RichText::new(b.name).size(14.5).strong());
+                                ui.add_space(2.0);
+                                ui.add(
+                                    egui::Label::new(format!("Extension Folder: {ext_str}"))
+                                        .wrap(true),
+                                );
+                                ui.label(format!("Extensions Page: {}", b.install_url));
+                                ui.add_space(6.0);
+                                ui.horizontal(|ui| {
+                                    if ui.button("Copy Path").clicked() {
+                                        ui.output_mut(|o| o.copied_text = ext_str.clone());
+                                        self.status_message = Some(format!(
+                                            "Copied {} extension path to clipboard.",
+                                            b.name
+                                        ));
+                                    }
+                                    if ui.button("Open Extensions Page").clicked() {
+                                        ui.output_mut(|o| o.copied_text = ext_str.clone());
+                                        let exe = b.executable_path.clone();
+                                        let url = b.install_url;
+                                        std::thread::spawn(move || {
+                                            let _ = std::process::Command::new(&exe)
+                                                .arg(url)
+                                                .spawn();
+                                        });
+                                        self.status_message = Some(format!(
+                                            "Opening {} (extension path copied to clipboard).",
+                                            b.name
+                                        ));
+                                    }
+                                });
+                            });
+                        ui.add_space(6.0);
                     }
-                }
-            });
-
-            ui.add_space(12.0);
-            ui.separator();
-            ui.horizontal(|ui| {
-                if ui.button("Save All Settings").clicked() {
-                    self.apply_and_save_shortcuts("All settings saved successfully.");
-                }
-                if let Some(msg) = &self.status_message {
-                    ui.colored_label(egui::Color32::from_rgb(100, 200, 255), msg);
                 }
             });
         });
 
-        // Render modal keyboard shortcut editor if open
         self.render_keyboard_modal(ctx);
     }
 }

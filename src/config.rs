@@ -154,14 +154,14 @@ impl Default for AppConfig {
                 ),
                 // Stop Speaking (TTS): Ctrl + Shift + X (optional mouse None)
                 stop_speaking: default_stop_speaking(),
-                // Push-to-Talk (STT): Ctrl + Shift + D AND Mouse Button 5 (XButton2)
+                // Push-to-Talk (STT): Ctrl + Shift + D AND Mouse Button 5 (XButton2) click toggle
                 push_to_talk: ActionBinding::new(
                     InputChord::new(
                         vec![ModifierKey::Control, ModifierKey::Shift],
                         TriggerSource::Key(0x44), // VK_D
                         TriggerMode::Press,
                     ),
-                    Some(InputChord::mouse_hold(5, Duration::from_millis(200))),
+                    Some(InputChord::mouse_hold(5, Duration::from_millis(0))),
                 ),
                 // Open Home Dashboard: Ctrl + Shift + S (single key also permitted in editor)
                 open_home: ActionBinding::new(

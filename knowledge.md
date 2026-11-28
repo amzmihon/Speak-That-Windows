@@ -343,3 +343,13 @@ Every user instruction from this conversation and the exact actions performed in
   > `Convert Paradee 8M TTS to 100% native Rust (eliminating ALL Python / .venv dependencies), package a standalone zero-dependency Windows release, push all updates to GitHub, and publish a new GitHub Release.`
 * **What Was Done:**
   - Removed Python worker (`tts_worker.py`), exported compressed Misaki US+GB lexicons (`assets/misaki_us.tsv.gz`, `assets/misaki_gb.tsv.gz`) + `assets/paradee_config.json`, implemented `src/audio/g2p.rs` (lexicon + suffix stemming + LTS fallback + `<= 512` BOS/EOS token chunking), wired `ort` (`load-dynamic`) + `rodio` 24 kHz playback in `src/audio/tts.rs`, updated `src/ui/browser_detect.rs` for packaged `./extensions/` + `./models/`, fixed `bionic/engine.rs` unit test, built optimized release binary, verified zero-Python isolated execution in `%TEMP%`, pushed `main` & `v0.2.0`, and published the GitHub Release.
+
+### Turn 29 (`2026-11-28T01:25:00Z`)
+* **User Instruction:**
+  > `Fix all 5 production issues found during live testing of SpeakThat v0.2.0 in E:\Speak-That-Windows, then rebuild and update the GitHub Release... Hide Debug Console in Release Builds... True Background Mode + Working System Tray & Open Home Hotkey... Mouse 4 = Start/Stop Toggle for TTS + Mouse 5 Hold 0ms Toggle for STT... Floating Cursor/Selection Stop Control Popup... Polish Settings Dashboard UI Spacing, Save Button & Paths...`
+* **What Was Done:**
+  - Hid the console window on Windows release builds (`#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`) while logging diagnostics to `%LOCALAPPDATA%\SpeakThat\speakthat.log` (truncated on startup) in `src/main.rs`.
+  - Fixed close-to-tray (`CancelClose` + `Visible(false)`) and native Win32 Dashboard restore (`FindWindowW` + `ShowWindow` + `SetForegroundWindow`), and fixed `src/ui/tray.rs` (`TPM_RETURNCMD` + embedded `favicon.ico` icon).
+  - Updated **Mouse 4** to toggle TTS start/stop (`tts.is_playing()`) and **Mouse 5** default hold to `0 ms` for instant STT dictation toggle (`src/config.rs`, `src/main.rs`).
+  - Implemented `FloatingPillHud` (`src/ui/hud.rs`) as a native Win32 topmost non-activating rounded pill beside the cursor/selection with Play/Pause, red Stop button, and live sentence text, plus secondary `speakthat_reader` viewport (`src/ui/reader_view.rs`).
+  - Polished `src/ui/dashboard.rs` (`860x560` default above taskbar, pinned footer Save panel, uniform Voice sliders + `⏹ Stop` button, full-width Browsers cards with `Copy Path` & `Open Extensions Page`), passed `cargo test` (8/8), verified live in isolated `%TEMP%`, and published `v0.2.1` (`dist\SpeakThat-v0.2.1-win64.zip`).

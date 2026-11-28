@@ -1,6 +1,6 @@
 [package]
 name = "speakthat"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["Abdullah Mohammad Zakaria <amzakariamehon@gmail.com>"]
 description = "Unified Windows Accessibility & Reading Suite: SpeakThat + Bionic Reader"

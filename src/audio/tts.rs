@@ -4,12 +4,14 @@ use rodio::buffer::SamplesBuffer;
 use rodio::{OutputStream, Sink};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, error, info};
+use windows::Win32::Foundation::POINT;
+use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use crate::audio::g2p::MisakiG2p;
-use crate::ui::BrowserDetector;
+use crate::ui::{BrowserDetector, FloatingPillHud};
 
 const PARADEE_SAMPLE_RATE: u32 = 24_000;
 
@@ -28,6 +30,7 @@ enum TtsCommand {
 
 pub struct TtsEngine {
     state_tx: watch::Sender<PlaybackState>,
+    sentence_tx: watch::Sender<String>,
     is_paused: Arc<AtomicBool>,
     cmd_tx: mpsc::UnboundedSender<TtsCommand>,
     active_job_id: Arc<AtomicU64>,
@@ -35,11 +38,14 @@ pub struct TtsEngine {
     speed_bits: Arc<AtomicU32>,
     volume_bits: Arc<AtomicU32>,
     active_sink: Arc<Mutex<Option<Arc<Sink>>>>,
+    hud_anchor: Arc<Mutex<Option<(i32, i32)>>>,
+    egui_ctx: Arc<RwLock<Option<eframe::egui::Context>>>,
 }
 
 impl TtsEngine {
     pub fn new() -> (Self, watch::Receiver<PlaybackState>) {
         let (state_tx, state_rx) = watch::channel(PlaybackState::Stopped);
+        let (sentence_tx, _sentence_rx) = watch::channel(String::new());
         let is_paused = Arc::new(AtomicBool::new(false));
         let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<TtsCommand>();
         let active_job_id = Arc::new(AtomicU64::new(0));
@@ -47,14 +53,27 @@ impl TtsEngine {
         let speed_bits = Arc::new(AtomicU32::new(1.05_f32.to_bits()));
         let volume_bits = Arc::new(AtomicU32::new(1.0_f32.to_bits()));
         let active_sink: Arc<Mutex<Option<Arc<Sink>>>> = Arc::new(Mutex::new(None));
+        let hud_anchor: Arc<Mutex<Option<(i32, i32)>>> = Arc::new(Mutex::new(None));
+        let egui_ctx: Arc<RwLock<Option<eframe::egui::Context>>> = Arc::new(RwLock::new(None));
 
         let state_tx_worker = state_tx.clone();
+        let sentence_tx_worker = sentence_tx.clone();
         let is_paused_worker = Arc::clone(&is_paused);
         let job_id_worker = Arc::clone(&active_job_id);
         let voice_worker = Arc::clone(&voice);
         let speed_worker = Arc::clone(&speed_bits);
         let volume_worker = Arc::clone(&volume_bits);
         let sink_worker = Arc::clone(&active_sink);
+        let ctx_worker = Arc::clone(&egui_ctx);
+
+        let notify_ui = move || {
+            FloatingPillHud::refresh();
+            if let Ok(guard) = ctx_worker.read() {
+                if let Some(ref c) = *guard {
+                    c.request_repaint();
+                }
+            }
+        };
 
         // Pure-Rust ONNX + Misaki G2P + Rodio WASAPI playback thread (zero Python)
         std::thread::spawn(move || {
@@ -107,11 +126,9 @@ impl TtsEngine {
                 }
             };
 
-            // Warmup tiny inference to prime JIT/ONNX graph
             let _ = Self::run_inference(&mut session, &g2p, "Ready.", "bf_isabella", 1.0);
             info!("Pure-Rust Paradee 8M ONNX TTS engine is initialized and ready (zero Python).");
 
-            // Initialize native Windows audio output stream once on worker thread
             let stream_tuple = match OutputStream::try_default() {
                 Ok(st) => st,
                 Err(e) => {
@@ -128,7 +145,6 @@ impl TtsEngine {
                             continue;
                         }
 
-                        // Stop any existing sink immediately
                         if let Ok(mut guard) = sink_worker.lock() {
                             if let Some(prev) = guard.take() {
                                 prev.stop();
@@ -139,6 +155,9 @@ impl TtsEngine {
                             Ok(s) => Arc::new(s),
                             Err(e) => {
                                 error!("Failed to create audio sink: {e}");
+                                let _ = state_tx_worker.send(PlaybackState::Stopped);
+                                let _ = sentence_tx_worker.send(String::new());
+                                notify_ui();
                                 continue;
                             }
                         };
@@ -150,6 +169,7 @@ impl TtsEngine {
 
                         is_paused_worker.store(false, Ordering::SeqCst);
                         let _ = state_tx_worker.send(PlaybackState::Playing);
+                        notify_ui();
 
                         let sentences = MisakiG2p::split_sentences(&text);
                         for sentence in sentences {
@@ -158,6 +178,9 @@ impl TtsEngine {
                                 break;
                             }
 
+                            let _ = sentence_tx_worker.send(sentence.clone());
+                            notify_ui();
+
                             let cur_voice = voice_worker
                                 .lock()
                                 .map(|g| g.clone())
@@ -165,7 +188,9 @@ impl TtsEngine {
                             let cur_speed =
                                 f32::from_bits(speed_worker.load(Ordering::SeqCst)).clamp(0.5, 2.5);
 
-                            info!("Paradee synthesizing sentence ({cur_voice} @ {cur_speed:.2}x): \"{sentence}\"");
+                            info!(
+                                "Paradee synthesizing sentence ({cur_voice} @ {cur_speed:.2}x): \"{sentence}\""
+                            );
                             match Self::run_inference(
                                 &mut session,
                                 &g2p,
@@ -178,7 +203,11 @@ impl TtsEngine {
                                         sink.stop();
                                         break;
                                     }
-                                    sink.append(SamplesBuffer::new(1, PARADEE_SAMPLE_RATE, samples));
+                                    sink.append(SamplesBuffer::new(
+                                        1,
+                                        PARADEE_SAMPLE_RATE,
+                                        samples,
+                                    ));
                                 }
                                 Ok(_) => {}
                                 Err(e) => {
@@ -187,7 +216,6 @@ impl TtsEngine {
                             }
                         }
 
-                        // Wait cleanly while audio finishes unless interrupted by Stop or new Speak job
                         while !sink.empty() {
                             if job_id != job_id_worker.load(Ordering::SeqCst) {
                                 sink.stop();
@@ -198,7 +226,10 @@ impl TtsEngine {
 
                         if job_id == job_id_worker.load(Ordering::SeqCst) {
                             is_paused_worker.store(false, Ordering::SeqCst);
+                            let _ = sentence_tx_worker.send(String::new());
                             let _ = state_tx_worker.send(PlaybackState::Stopped);
+                            FloatingPillHud::hide();
+                            notify_ui();
                         }
                     }
                     TtsCommand::Stop => {
@@ -208,7 +239,10 @@ impl TtsEngine {
                             }
                         }
                         is_paused_worker.store(false, Ordering::SeqCst);
+                        let _ = sentence_tx_worker.send(String::new());
                         let _ = state_tx_worker.send(PlaybackState::Stopped);
+                        FloatingPillHud::hide();
+                        notify_ui();
                     }
                     TtsCommand::TogglePause => {
                         if let Ok(guard) = sink_worker.lock() {
@@ -222,6 +256,7 @@ impl TtsEngine {
                                     is_paused_worker.store(true, Ordering::SeqCst);
                                     let _ = state_tx_worker.send(PlaybackState::Paused);
                                 }
+                                notify_ui();
                             }
                         }
                     }
@@ -232,6 +267,7 @@ impl TtsEngine {
         (
             Self {
                 state_tx,
+                sentence_tx,
                 is_paused,
                 cmd_tx,
                 active_job_id,
@@ -239,9 +275,42 @@ impl TtsEngine {
                 speed_bits,
                 volume_bits,
                 active_sink,
+                hud_anchor,
+                egui_ctx,
             },
             state_rx,
         )
+    }
+
+    pub fn set_egui_ctx(&self, ctx: eframe::egui::Context) {
+        if let Ok(mut guard) = self.egui_ctx.write() {
+            *guard = Some(ctx);
+        }
+    }
+
+    fn request_ui_repaint(&self) {
+        if let Ok(guard) = self.egui_ctx.read() {
+            if let Some(ref c) = *guard {
+                c.request_repaint();
+            }
+        }
+    }
+
+    pub fn is_playing(&self) -> bool {
+        !matches!(*self.state_tx.borrow(), PlaybackState::Stopped)
+    }
+
+    pub fn playback_state(&self) -> PlaybackState {
+        self.state_tx.borrow().clone()
+    }
+
+    pub fn current_sentence(&self) -> String {
+        self.sentence_tx.borrow().clone()
+    }
+
+    #[allow(dead_code)]
+    pub fn hud_anchor(&self) -> Option<(i32, i32)> {
+        self.hud_anchor.lock().ok().and_then(|g| *g)
     }
 
     fn run_inference(
@@ -337,14 +406,31 @@ impl TtsEngine {
         if text.trim().is_empty() {
             return;
         }
+        // Snapshot cursor position beside the user's click / selection for the floating Stop pill HUD
+        let mut anchor = (200, 120);
+        unsafe {
+            let mut pt = POINT::default();
+            if GetCursorPos(&mut pt).is_ok() {
+                anchor = (pt.x, pt.y);
+                if let Ok(mut guard) = self.hud_anchor.lock() {
+                    *guard = Some(anchor);
+                }
+            }
+        }
+
         let next_id = self.active_job_id.fetch_add(1, Ordering::SeqCst) + 1;
-        // Stop any current playback immediately before queuing the new job
         if let Ok(mut guard) = self.active_sink.lock() {
             if let Some(prev) = guard.take() {
                 prev.stop();
             }
         }
         info!("Sending speak request to native Paradee engine: {} chars", text.len());
+        let first_preview: String = text.trim().lines().next().unwrap_or("Speaking...").chars().take(60).collect();
+        let _ = self.sentence_tx.send(first_preview);
+        let _ = self.state_tx.send(PlaybackState::Playing);
+        FloatingPillHud::show_at(anchor.0, anchor.1);
+        self.request_ui_repaint();
+
         let _ = self.cmd_tx.send(TtsCommand::Speak {
             job_id: next_id,
             text: text.to_string(),
@@ -361,12 +447,14 @@ impl TtsEngine {
             }
         }
         self.is_paused.store(false, Ordering::SeqCst);
+        let _ = self.sentence_tx.send(String::new());
         let _ = self.state_tx.send(PlaybackState::Stopped);
+        FloatingPillHud::hide();
+        self.request_ui_repaint();
         let _ = self.cmd_tx.send(TtsCommand::Stop);
     }
 
     /// Toggle pause / resume
-    #[allow(dead_code)]
     pub fn toggle_pause(&self) {
         let _ = self.cmd_tx.send(TtsCommand::TogglePause);
     }
